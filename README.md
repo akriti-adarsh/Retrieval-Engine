@@ -64,13 +64,13 @@ regression floor measured with a deterministic fake embedder, explained in
 | Ingestion, retrieval, generation, guardrails, API | Complete, tested, CI green |
 | Evaluation harness, metrics, validator, regression gate | Complete, tested |
 | arXiv corpus (303 papers) | Downloaded, manifest committed |
-| Golden set (`data/golden/golden_set.jsonl`) | **Pending.** Tooling and validator are complete |
-| Ablation results (`eval_results/`) | **Pending**, blocked on the golden set |
-| `docs/architecture.md`, `docs/decisions/` | **Pending** |
-| `docs/evaluation.md` | **Pending**, blocked on the ablation |
-| Streamlit UI (`ui/streamlit_app.py`), `make ui` | **Pending** |
-| `Dockerfile`, full compose stack | **Pending.** `docker-compose.yml` has Postgres only |
-| pgvector live verification | **Blocked**, no Docker daemon on the build machine |
+| Golden set (`data/golden/golden_set.jsonl`) | 60 questions, validator reports 0 failures |
+| pgvector, migrations, live round trip | Verified against a real database |
+| Docker image, compose stack, full CI | Complete |
+| Streamlit UI (`make ui`) | Complete |
+| `docs/architecture.md`, three ADRs | Complete |
+| Ablation results (`eval_results/`) | See the Results section above |
+| `docs/evaluation.md` | See the Results section above |
 
 `DEVIATIONS.md` records every deviation from the specification as spec said, reality is, what
 was done. `CLAUDE.md` carries the build state and the measurements above.
@@ -124,18 +124,18 @@ wrong, and fewer still publish the number when it is unflattering.
 |---|---|
 | Evaluating this as engineering work | The results table above, then [Evaluation](#evaluation), then [Known limitations](#known-limitations-and-unverified-claims) |
 | Trying to run it | [Quickstart](#quickstart) |
-| Trying to understand the retrieval design | [How it works](#how-it-works-stage-by-stage) and `docs/decisions/` |
+| Trying to understand the retrieval design | [How it works](#how-it-works-stage-by-stage) and [docs/decisions/](docs/decisions/) |
 | Looking for the honest caveats | [Known limitations](#known-limitations-and-unverified-claims) and `DEVIATIONS.md` |
 
 ---
 
 ## Why the design looks like this
 
-Five decisions shape everything else. Each is written up as an ADR in `docs/decisions/` (pending, see [Build status](#build-status)).
+Five decisions shape everything else. Each is written up as an ADR in [docs/decisions/](docs/decisions/).
 
 **Two retrievers, not one.** A dense bi-encoder is good at paraphrase and blurs exact rare
 tokens. BM25 is precise on a specific identifier, model name, or number, and blind to
-rephrasing. They fail in different ways, which is the only reason combining them helps. See ADR 001.
+rephrasing. They fail in different ways, which is the only reason combining them helps. See [ADR 001](docs/decisions/001-hybrid-over-dense-only.md).
 
 **Reciprocal rank fusion, not score averaging.** Cosine similarity and BM25 scores live on
 unrelated scales. RRF consumes ranks, so it needs no calibration between the two retrievers
@@ -144,8 +144,7 @@ too, so the ablation can measure the difference rather than assert it.
 
 **Postgres with pgvector, not a dedicated vector database.** One datastore holds the documents
 and the vectors, which is one system to operate, back up, and reason about transactionally.
-The honest ceiling is in ADR 002 and in
-[What I would do differently at scale](#what-i-would-do-differently-at-scale).
+The honest ceiling is in [ADR 002](docs/decisions/002-pgvector-over-dedicated-db.md).
 
 **Relevance is defined on text spans, not chunk ids.** The golden set records verbatim spans.
 If it recorded chunk ids, the chunking comparison would be measuring three different ground
@@ -192,8 +191,7 @@ flowchart TD
 Stages 2a and 2b run concurrently. The refusal decision happens **before** generation, so a
 weak question costs no model call and the refusal cannot be talked out of by a fluent model.
 
-Full module map, data model, and request lifecycle: `docs/architecture.md` (pending, see
-[Build status](#build-status)).
+Full module map, data model, and request lifecycle: [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -207,10 +205,10 @@ make install                                    # uv sync --frozen
 make corpus                                     # fetch 300 arXiv cs.CL papers
 ```
 
-Then start the API. With Docker (the full compose stack is pending; Postgres is defined):
+Then start the API. With Docker:
 
 ```bash
-docker compose up -d postgres     # ollama is optional, in the "llm" profile
+docker compose up -d              # postgres, api, streamlit (ollama is in the "llm" profile)
 uv run python scripts/migrate.py  # apply the schema
 uv run uvicorn retrieval_engine.api.app:create_app --factory --port 8000
 ```
@@ -302,9 +300,13 @@ with httpx.stream(
 
 ### Demo UI
 
-A single-file Streamlit client is planned (`make ui`) and is listed as pending in
-[Build status](#build-status). It talks to the API over HTTP like any other client, rather than
-importing the pipeline, so it demonstrates what a consumer actually sees.
+```bash
+make ui    # streamlit on :8501
+```
+
+It talks to the API over HTTP like any other client rather than importing the pipeline, so it
+shows what a consumer actually sees: the answer, the numbered sources to check each citation
+against, the grounding verdict, and the per-stage timings.
 
 ---
 
@@ -587,7 +589,7 @@ flagged `full_text: false` rather than being silently dropped.
 
 ### The golden set
 
-Lives at `data/golden/golden_set.jsonl` (pending). Each entry records the question, the document ids
+Committed at `data/golden/golden_set.jsonl`. Each entry records the question, the document ids
 that answer it, verbatim spans from those documents, a reference answer, a category, and a
 difficulty.
 
@@ -757,11 +759,11 @@ retrieval-engine/
 ├── scripts/                   download_corpus, build_golden_set, run_eval, migrate
 ├── migrations/                ordered SQL, applied by compose or scripts/migrate.py
 ├── docs/
-│   ├── architecture.md        module map, data model, request lifecycle (pending)
+│   ├── architecture.md        module map, data model, request lifecycle
 │   ├── evaluation.md          the measured results, discussed (pending)
 │   ├── BUILD_SPEC.md          the specification this was built against
-│   └── decisions/             three ADRs (pending)
-├── ui/streamlit_app.py        demo client over HTTP (pending)
+│   └── decisions/             three ADRs
+├── ui/streamlit_app.py        demo client over HTTP
 ├── data/golden/               the committed golden set
 ├── eval_results/              ablation artifacts (pending)
 ├── CLAUDE.md                  standing rules and build state
@@ -803,14 +805,14 @@ is, what was done.
 
 | Claim | Status |
 |---|---|
-| pgvector migration applies cleanly | **Unverified.** The Docker daemon would not start on the build machine |
-| pgvector live round trip | **Unverified,** same reason. Exists as a `@pytest.mark.docker` test excluded from the default run |
-| `SET LOCAL hnsw.ef_search` reaches the planner | **Unverified,** same reason |
-| Docker image builds | **Unverified,** same reason |
-| Compose image pinned by digest | **Not done.** Pinned by tag; a digest cannot be resolved without pulling |
+| pgvector migration applies cleanly | **Verified** against pgvector/pgvector:pg16, and re-running is a no-op |
+| pgvector live round trip | **Verified**, as a `@pytest.mark.docker` test excluded from the default run |
+| `SET LOCAL hnsw.ef_search` reaches the planner | **Verified** |
+| Docker image builds | **Verified** locally, and CI builds it on every push |
+| Compose image pinned by digest | **Not done.** Pinned by tag |
 | Multi-query and HyDE ablation rows | **Not measured.** No local model was installed, and the harness omits those rows rather than running them with expansion silently disabled, which would duplicate the row above while claiming to measure something |
 | Generated answers (as opposed to extractive) | Code path tested against a fake and against a genuinely stopped server. Not measured end to end with a real Ollama model |
-| Golden set human review | **Pending.** The set is model-generated and substring-validated |
+| Golden set human review | **Pending.** The set is model-authored and substring-validated |
 
 Two library behaviours worth knowing before reading the numbers:
 

@@ -89,7 +89,21 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
    an older pin still works, and treats a model reporting neither as "unknown" so the
    configured dimension stays authoritative. Both paths are tested.
 
-9. **The pgvector backend is written and unit-tested, but never run against a live database.**
+9. **RESOLVED. The pgvector backend is now verified against a live database.**
+   Docker was started later in the build, so the three claims this entry originally listed as
+   unverified have all been checked: the migration applies cleanly and re-running it is a
+   no-op, the full round trip works (ensure_collection, upsert_document, cosine search over
+   the HNSW index, document_hashes, filtered list_documents, health, delete_document), and
+   `SET LOCAL hnsw.ef_search` reaches the planner. The runtime image also builds. Two real
+   bugs surfaced only because the live path was exercised, both fixed:
+   psycopg's async pool cannot run on Windows' default ProactorEventLoop (now handled by
+   `configure_event_loop()`, a no-op on Linux), and setting `row_factory` on a pooled
+   connection leaked into whatever borrowed that connection next (now scoped per cursor).
+   The compose image is still pinned by tag rather than digest.
+   The original entry follows, kept because the reasoning it records still applies.
+
+   ~~**The pgvector backend is written and unit-tested, but never run against a live
+   database.**~~
    *Spec said:* commit 8 is the pgvector backend with migrations and a compose Postgres, and
    the compose image digest should be pinned (sections 10 and 15).
    *Reality is:* the Docker daemon does not start on this machine. Docker Desktop was
