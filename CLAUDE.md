@@ -18,12 +18,12 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-15 all landed. Last completed: "feat(store): pgvector backend
-  with hnsw index"
-- Suite at last commit: 434 passed, 1 deselected in 17.44s · Coverage: 91%
-- Open deviations: 12 · Next up: commits 16-17 (the API: query, ingest, admin routes, then SSE
-  streaming, Prometheus metrics, and the token-bucket rate limiter). src/retrieval_engine/
-  service.py and api/deps.py are already written and stashed in the working tree for commit 16.
+- Plan position: spec commits 1-16 all landed. Last completed: "feat(api): query, ingest, and
+  admin routes"
+- Suite at last commit: 475 passed, 1 deselected in 13.99s · Coverage: 91%
+- Open deviations: 14 · Next up: commit 17 (SSE streaming with the token/done contract and a
+  15s heartbeat, Prometheus /metrics, token-bucket rate limiting), then commits 18-22 (the
+  eval harness, which is the part that makes the repo credible).
 - Coverage note: it fell from 95% to 91% because pgvector.py's database code cannot run
   without Docker. That is the honest number, not a regression in test quality, and it should
   climb back once the docker-marked tests can run. Do not "fix" it by deleting assertions.

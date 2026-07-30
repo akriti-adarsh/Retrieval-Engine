@@ -87,6 +87,13 @@ class LLMUnavailableError(RetrievalEngineError):
     http_status = 503
 
 
+class RequestTooLargeError(RetrievalEngineError):
+    """An upload exceeded the configured size limit."""
+
+    code = "request_too_large"
+    http_status = 413
+
+
 class RateLimitExceededError(RetrievalEngineError):
     """The caller exhausted its token bucket."""
 
@@ -118,6 +125,7 @@ __all__ = [
     "JobNotFoundError",
     "LLMUnavailableError",
     "RateLimitExceededError",
+    "RequestTooLargeError",
     "RetrievalEngineError",
     "StoreUnavailableError",
     "UnsupportedFormatError",

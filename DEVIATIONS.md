@@ -128,7 +128,26 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
     optional remote backend in this service is the embedder, which is where the spec's env
     flag actually applies.
 
-12. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+12. **Ingestion is two endpoints, and a server-side path is confined to the data directory.**
+    *Spec said:* "`POST /v1/ingest` accepts uploaded files or a directory path" (section 7).
+    *Reality is:* a JSON body and a multipart upload cannot share one FastAPI signature, so
+    one route cannot accept both shapes. Separately, a route that ingests any server path is
+    a file-read primitive: point it at a directory of secrets and the contents come back out
+    through query answers.
+    *What was done:* `POST /v1/ingest` takes a JSON path and `POST /v1/ingest/upload` takes
+    multipart files. The path must resolve inside `RE_DATA_DIR`, with a traversal attempt
+    tested, and uploads land in a temporary directory that is deleted with the request so an
+    upload cannot quietly become part of a reproducible eval corpus.
+
+13. **Added `src/retrieval_engine/service.py`, which the section 2 tree does not list.**
+    *Spec said:* the file tree, with the API in `api/` and the harness in `eval/`.
+    *Reality is:* the answer path (retrieve, refuse-or-generate, verify) is needed by both
+    the API and the eval runner. Leaving it in a route handler would force the harness to
+    either import from the web layer or reimplement it, and a reimplementation drifts until
+    the published numbers describe a code path no user ever hits.
+    *What was done:* `AnswerService` lives in one module that both layers call.
+
+14. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error
