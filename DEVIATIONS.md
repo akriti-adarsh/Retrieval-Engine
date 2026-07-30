@@ -89,13 +89,22 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
    an older pin still works, and treats a model reporting neither as "unknown" so the
    configured dimension stays authoritative. Both paths are tested.
 
-9. **Commit 8 (pgvector) deferred until after commit 9 (ingest pipeline).**
-   *Spec said:* commit 8 is the pgvector backend, commit 9 is the orchestrated pipeline.
-   *Reality is:* the Docker daemon was not running on this machine, so no pgvector claim
-   could be verified, and rule 3 forbids calling unverified work done.
-   *What was done:* the ingest pipeline landed first, fully verified end to end against the
-   real `bge-small` model. pgvector follows once Docker is up. The test suite needs no
-   database by design, so nothing else was blocked.
+9. **The pgvector backend is written and unit-tested, but never run against a live database.**
+   *Spec said:* commit 8 is the pgvector backend with migrations and a compose Postgres, and
+   the compose image digest should be pinned (sections 10 and 15).
+   *Reality is:* the Docker daemon does not start on this machine. Docker Desktop was
+   launched and its process exited on its own, so `docker info` still cannot reach the
+   daemon. Nothing that needs a live Postgres can be verified here, and a digest cannot be
+   resolved without pulling the image.
+   *What was done:* commit 8 landed after commit 9, because the ingest pipeline was fully
+   verifiable and this was not. The backend's pure logic is unit-tested with no database
+   (vector literals, parameterised filter clauses including an injection attempt, row
+   mapping, unknown-strategy fallback, and the never-raises health contract), and the full
+   round trip exists as a `@pytest.mark.docker` test excluded from the default run. The
+   image is pinned by tag rather than digest. Three things therefore remain unverified and
+   must be checked once Docker runs: the migration applying cleanly, the live round trip,
+   and `SET LOCAL hnsw.ef_search` actually reaching the planner. The Makefile deliberately
+   has no `up` target yet, since every target in it is supposed to work.
 
 10. **BM25 contributes nothing on a very small index, which shapes how to read the ablation.**
     *Spec said:* lexical retrieval via `rank-bm25`, fused with dense (sections 1 and 5).

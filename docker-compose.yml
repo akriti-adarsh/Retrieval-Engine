@@ -1,0 +1,35 @@
+# Postgres with pgvector. The api, streamlit, and ollama services are added in the
+# containerisation commit; this file grows with them rather than describing them early.
+#
+# The migrations directory is mounted into docker-entrypoint-initdb.d, which Postgres runs
+# only on an empty data directory. For an existing database, or a Postgres that is not this
+# container, use scripts/migrate.py instead. Both paths apply the same ordered SQL files.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: retrieval
+      POSTGRES_PASSWORD: retrieval
+      POSTGRES_DB: retrieval
+      # Keeps initdb deterministic across host locales.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # Remap in docker-compose.override.yml if 5432 is taken locally, rather than editing
+      # this file, so the committed compose stays the same for everyone.
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # pg_isready rather than a TCP check: the port accepts connections before the server
+      # is ready to answer queries, and depends_on would then start the api too early.
+      test: ["CMD-SHELL", "pg_isready -U retrieval -d retrieval"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

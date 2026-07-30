@@ -18,12 +18,17 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-7 and 9-15 done; commit 8 (pgvector) deferred, see
-  DEVIATIONS 9. Last completed: "feat(guardrails): grounding verification and refusal"
-- Suite at last commit: 418 passed in 16.34s · Coverage: 95%
+- Plan position: spec commits 1-15 all landed. Last completed: "feat(store): pgvector backend
+  with hnsw index"
+- Suite at last commit: 434 passed, 1 deselected in 17.44s · Coverage: 91%
 - Open deviations: 12 · Next up: commits 16-17 (the API: query, ingest, admin routes, then SSE
-  streaming, Prometheus metrics, and the token-bucket rate limiter). Every piece the API needs
-  now exists, so 16 is wiring plus api/deps.py. Commit 8 (pgvector) still waiting on Docker.
+  streaming, Prometheus metrics, and the token-bucket rate limiter). src/retrieval_engine/
+  service.py and api/deps.py are already written and stashed in the working tree for commit 16.
+- Coverage note: it fell from 95% to 91% because pgvector.py's database code cannot run
+  without Docker. That is the honest number, not a regression in test quality, and it should
+  climb back once the docker-marked tests can run. Do not "fix" it by deleting assertions.
+- Reminder for whoever gets Docker working: three pgvector claims are still unverified, listed
+  in DEVIATIONS 9. Verify them before the README describes pgvector as working.
 - Note for the API work: the refusal policy only thresholds a reranker score. If the API is
   ever wired to run without reranking, RefusalDecision.threshold_applied is False and the
   confidence field is a fused score, not a probability. Do not surface it as a confidence.
