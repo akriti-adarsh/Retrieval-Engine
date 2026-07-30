@@ -18,8 +18,28 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-17 all landed. Last completed: "feat(api): streaming, metrics,
-  and rate limiting"
+- Plan position: spec commits 1-19, 21, 22 landed (22 commits). Remaining: 20 (golden set data),
+  23 (Streamlit UI), 24 (Dockerfile and full CI), 25 (architecture doc and three ADRs), 26
+  (README numbers). Last completed: "docs: comprehensive README, plus eval Makefile targets"
+- NEXT SESSION, in this order, because each unblocks the next:
+  1. Author `data/golden/golden_set.jsonl`, 60 entries, and get
+     `make golden-validate` to print PASS. Spans MUST be copied verbatim out of
+     `data/corpus/*.md` body text (front matter is stripped by the loader) and stay inside one
+     line, since a span crossing a line break must match the break exactly. Keep them 80 to 250
+     chars. 10 negatives with empty relevant_doc_ids and relevant_chunk_texts.
+  2. `make eval-ablate`. Measured throughput is 2,435 tok/s, so budget about 30 min per
+     chunking index and about 90 min for the seven rows. It rewrites the report after every
+     row, so an interrupted run still leaves real numbers on disk.
+  3. Fill the README's Results section from `eval_results/ablation.md`, and write
+     `docs/evaluation.md`. Delete the "ablation has not been run" note only once the numbers
+     are in a committed artifact.
+  4. Commits 23, 24, 25 (UI, containers, architecture doc and ADRs). The README's Build status
+     table lists each as pending; update it as they land.
+- Blocked, not forgotten: three pgvector claims and the Docker image build need a working Docker
+  daemon (DEVIATIONS 9). Multi-query and HyDE ablation rows need a local Ollama; the harness
+  omits them rather than running expansion silently disabled.
+- Do NOT put a number in the README that is not in a committed artifact. The Results section is
+  deliberately empty rather than estimated, and that is the point of the whole harness.
 - Suite at last commit: 500 passed, 1 deselected in 20.43s · Coverage: 91%
 - Open deviations: 14 · Next up: commits 18-22, the eval harness. That is the part that makes
   this repo credible, and it is also where the two open blockers bite: the ablation needs the
