@@ -449,6 +449,19 @@ class GroundingReport(Base):
         return sum(s.max_similarity for s in self.sentences) / len(self.sentences)
 
 
+class RefusalDecision(Base):
+    """Whether to answer at all, and the evidence for that call."""
+
+    refused: bool
+    reason: str = ""
+    confidence: float = 0.0
+    usable_sources: int = Field(default=0, ge=0)
+    threshold_applied: bool = Field(
+        default=True,
+        description="False when no confidence threshold could be applied, e.g. reranking off.",
+    )
+
+
 class GeneratedAnswer(Base):
     """Raw output of a generation backend, before guardrails run."""
 
@@ -687,6 +700,7 @@ __all__ = [
     "QueryRequest",
     "QueryResponse",
     "ReadyResponse",
+    "RefusalDecision",
     "RetrievalConfig",
     "RetrievalResult",
     "ScoredChunk",
