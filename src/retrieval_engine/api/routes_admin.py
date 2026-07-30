@@ -8,23 +8,117 @@ its own process is worthless for deciding whether to send traffic.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 from retrieval_engine import __version__
 from retrieval_engine.api.deps import ServicesDep
 from retrieval_engine.errors import DocumentNotFoundError
 from retrieval_engine.logging_config import get_logger
 from retrieval_engine.models import (
+    AnswerType,
     DocumentPage,
     ErrorResponse,
+    GroundingReport,
     HealthResponse,
     ReadyResponse,
+    StageTimings,
 )
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["admin"])
 documents_router = APIRouter(prefix="/v1/documents", tags=["documents"])
+
+# A dedicated registry rather than the process-global default. Tests build several
+# applications in one process, and global collectors would leak one test's counters into the
+# next and raise duplicate-registration errors on the second app.
+REGISTRY = CollectorRegistry()
+
+REQUESTS = Counter(
+    "re_requests_total",
+    "HTTP requests by route, method, and status.",
+    ["route", "method", "status"],
+    registry=REGISTRY,
+)
+REQUEST_LATENCY = Histogram(
+    "re_request_duration_seconds",
+    "End to end request latency by route.",
+    ["route"],
+    registry=REGISTRY,
+)
+STAGE_LATENCY = Histogram(
+    "re_stage_duration_seconds",
+    "Per-stage latency inside a query, which is where the interesting cost lives.",
+    ["stage"],
+    # Buckets chosen for this pipeline: dense search is single-digit milliseconds while
+    # cross-encoder reranking is hundreds, so default buckets would put both in one bin.
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+    registry=REGISTRY,
+)
+ANSWERS = Counter(
+    "re_answers_total",
+    "Answers by type. Refusal rate is refused over the sum across types.",
+    ["answer_type"],
+    registry=REGISTRY,
+)
+GROUNDING = Counter(
+    "re_grounding_total",
+    "Grounding verdicts. Failure rate is failed over the total.",
+    ["result"],
+    registry=REGISTRY,
+)
+RERANK_CACHE_HIT_RATE = Gauge(
+    "re_rerank_cache_hit_rate",
+    "Fraction of reranker score lookups served from cache.",
+    registry=REGISTRY,
+)
+RERANK_CACHE_ENTRIES = Gauge(
+    "re_rerank_cache_entries",
+    "Entries currently held in the reranker score cache.",
+    registry=REGISTRY,
+)
+
+
+def record_answer(
+    answer_type: AnswerType, timings: StageTimings, grounding: GroundingReport
+) -> None:
+    """Record one answer's metrics.
+
+    Called from the query routes rather than from middleware, because middleware only sees a
+    serialised body and would have to parse it back to learn any of this.
+    """
+    ANSWERS.labels(answer_type=answer_type.value).inc()
+    GROUNDING.labels(result="grounded" if grounding.grounded else "failed").inc()
+    for stage, milliseconds in (
+        ("expansion", timings.expansion_ms),
+        ("dense", timings.dense_ms),
+        ("lexical", timings.lexical_ms),
+        ("fusion", timings.fusion_ms),
+        ("rerank", timings.rerank_ms),
+        ("generation", timings.generation_ms),
+        ("grounding", timings.grounding_ms),
+    ):
+        STAGE_LATENCY.labels(stage=stage).observe(milliseconds / 1000.0)
+
+
+@router.get("/metrics", summary="Prometheus metrics")
+async def metrics(services: ServicesDep) -> Response:
+    """Expose metrics in the Prometheus text format.
+
+    The cache gauges are sampled here rather than written on every lookup: they are derived
+    state, and reading them at scrape time keeps the hot path free of metric writes.
+    """
+    RERANK_CACHE_HIT_RATE.set(services.reranker.cache.hit_rate)
+    RERANK_CACHE_ENTRIES.set(len(services.reranker.cache))
+    return Response(content=generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/health", response_model=HealthResponse, summary="Liveness")

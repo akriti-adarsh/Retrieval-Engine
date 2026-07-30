@@ -12,8 +12,10 @@ store into the next.
 
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -21,12 +23,20 @@ from fastapi.responses import JSONResponse
 
 from retrieval_engine import __version__
 from retrieval_engine.api.deps import Services, build_services
-from retrieval_engine.api.routes_admin import documents_router
+from retrieval_engine.api.routes_admin import (
+    REQUEST_LATENCY,
+    REQUESTS,
+    documents_router,
+)
 from retrieval_engine.api.routes_admin import router as admin_router
 from retrieval_engine.api.routes_ingest import router as ingest_router
 from retrieval_engine.api.routes_query import router as query_router
 from retrieval_engine.config import Settings, get_settings
-from retrieval_engine.errors import RetrievalEngineError, StoreUnavailableError
+from retrieval_engine.errors import (
+    RateLimitExceededError,
+    RetrievalEngineError,
+    StoreUnavailableError,
+)
 from retrieval_engine.logging_config import (
     bind_request_id,
     clear_request_context,
@@ -49,6 +59,94 @@ outcome, not an error.
 """
 
 
+#: Paths exempt from rate limiting. A limiter that can starve the liveness probe will take a
+#: healthy service out of rotation under exactly the load it was meant to protect it from.
+UNLIMITED_PATHS = frozenset({"/health", "/health/ready", "/metrics"})
+
+
+@dataclass
+class TokenBucket:
+    """One caller's allowance. Refills continuously rather than resetting on a boundary.
+
+    A fixed window lets a caller spend its whole allowance at 59.9 seconds and again at 60.1,
+    which is twice the intended rate at the worst possible moment. Continuous refill has no
+    such edge.
+    """
+
+    capacity: float
+    refill_per_second: float
+    tokens: float = field(default=0.0)
+    updated_at: float = field(default=0.0)
+    #: An explicit flag rather than treating updated_at == 0.0 as "never used". A monotonic
+    #: clock legitimately reads 0.0, and using that as a sentinel refilled the bucket to full
+    #: on every call, which silently disabled the limiter for the first caller.
+    started: bool = field(default=False)
+
+    def take(self, now: float) -> bool:
+        """Spend one token if the bucket has it, returning whether the request may proceed."""
+        if not self.started:
+            self.started = True
+            self.tokens = self.capacity
+            self.updated_at = now
+        elapsed = max(0.0, now - self.updated_at)
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_per_second)
+        self.updated_at = now
+        if self.tokens < 1.0:
+            return False
+        self.tokens -= 1.0
+        return True
+
+
+class RateLimiter:
+    """Per-caller token buckets, with a clock injected so the tests are not timing-dependent."""
+
+    def __init__(
+        self,
+        per_minute: int,
+        *,
+        clock: Callable[[], float] | None = None,
+        max_buckets: int = 10_000,
+    ) -> None:
+        self._capacity = float(per_minute)
+        self._refill = per_minute / 60.0
+        self._clock = clock if clock is not None else time.monotonic
+        self._max_buckets = max_buckets
+        self._buckets: dict[str, TokenBucket] = {}
+
+    def allow(self, key: str) -> bool:
+        """Whether ``key`` may make a request now."""
+        now = self._clock()
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            if len(self._buckets) >= self._max_buckets:
+                # Unbounded per-IP state is a memory leak an attacker controls. Dropping the
+                # fullest buckets first keeps the callers who are actually being limited.
+                self._evict(now)
+            bucket = TokenBucket(capacity=self._capacity, refill_per_second=self._refill)
+            self._buckets[key] = bucket
+        return bucket.take(now)
+
+    def _evict(self, now: float) -> None:
+        """Drop buckets that have refilled to full, since they carry no useful state."""
+        for key, bucket in list(self._buckets.items()):
+            elapsed = max(0.0, now - bucket.updated_at)
+            if bucket.tokens + elapsed * self._refill >= self._capacity:
+                del self._buckets[key]
+        if len(self._buckets) >= self._max_buckets:  # pragma: no cover - pathological load
+            self._buckets.clear()
+
+
+def client_key(request: Request) -> str:
+    """Identify the caller for rate limiting.
+
+    Deliberately the socket peer, not a forwarded header: X-Forwarded-For is caller-supplied
+    and trusting it lets anyone bypass the limiter by varying one header. Behind a real proxy
+    this needs the proxy's own trusted forwarding, which is deployment configuration rather
+    than something this code can safely assume.
+    """
+    return request.client.host if request.client else "unknown"
+
+
 def _error_response(request: Request, code: str, message: str, http_status: int) -> JSONResponse:
     """Build the one error shape this API returns."""
     request_id = getattr(request.state, "request_id", "")
@@ -69,11 +167,15 @@ def _error_response(request: Request, code: str, message: str, http_status: int)
 def create_app(
     settings: Settings | None = None,
     services: Services | None = None,
+    *,
+    clock: Callable[[], float] | None = None,
 ) -> FastAPI:
     """Build the application.
 
     ``services`` is the injection seam: tests pass a graph wired to an in-memory store and
     fakes, so the API can be exercised without a database, a model download, or a network.
+    ``clock`` is the seam for the rate limiter, so its tests assert behaviour rather than
+    sleeping and hoping.
     """
     active = (
         settings if settings is not None else (services.settings if services else get_settings())
@@ -104,6 +206,38 @@ def create_app(
         description=DESCRIPTION,
         lifespan=lifespan,
     )
+
+    limiter = RateLimiter(active.rate_limit_per_minute, clock=clock)
+    app.state.rate_limiter = limiter
+
+    @app.middleware("http")
+    async def observe_and_limit(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        """Rate limit, then time the request and count it by route.
+
+        The route template is used as the label, not the raw path, so a path parameter cannot
+        create unbounded label cardinality and blow up the metrics store.
+        """
+        path = request.url.path
+        if (
+            active.rate_limit_enabled
+            and path not in UNLIMITED_PATHS
+            and not limiter.allow(client_key(request))
+        ):
+            error = RateLimitExceededError(
+                f"rate limit of {active.rate_limit_per_minute} requests per minute exceeded"
+            )
+            REQUESTS.labels(route=path, method=request.method, status=error.http_status).inc()
+            return _error_response(request, error.code, error.message, error.http_status)
+
+        started = time.perf_counter()
+        response = await call_next(request)
+        route = request.scope.get("route")
+        label = getattr(route, "path", path)
+        REQUEST_LATENCY.labels(route=label).observe(time.perf_counter() - started)
+        REQUESTS.labels(route=label, method=request.method, status=response.status_code).inc()
+        return response
 
     @app.middleware("http")
     async def request_context(
@@ -155,4 +289,11 @@ def create_app(
     return app
 
 
-__all__ = ["REQUEST_ID_HEADER", "create_app"]
+__all__ = [
+    "REQUEST_ID_HEADER",
+    "UNLIMITED_PATHS",
+    "RateLimiter",
+    "TokenBucket",
+    "client_key",
+    "create_app",
+]

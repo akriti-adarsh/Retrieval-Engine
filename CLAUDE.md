@@ -18,12 +18,16 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-16 all landed. Last completed: "feat(api): query, ingest, and
-  admin routes"
-- Suite at last commit: 475 passed, 1 deselected in 13.99s · Coverage: 91%
-- Open deviations: 14 · Next up: commit 17 (SSE streaming with the token/done contract and a
-  15s heartbeat, Prometheus /metrics, token-bucket rate limiting), then commits 18-22 (the
-  eval harness, which is the part that makes the repo credible).
+- Plan position: spec commits 1-17 all landed. Last completed: "feat(api): streaming, metrics,
+  and rate limiting"
+- Suite at last commit: 500 passed, 1 deselected in 20.43s · Coverage: 91%
+- Open deviations: 14 · Next up: commits 18-22, the eval harness. That is the part that makes
+  this repo credible, and it is also where the two open blockers bite: the ablation needs the
+  real corpus, which needs the arXiv OAI-PMH rewrite (DEVIATIONS 2).
+- Note: the SSE route currently streams a fully-computed answer in pieces, so the client
+  contract is identical whether or not the backend streamed. Wiring LLM token-by-token
+  streaming through it is a separate change and must keep the refusal and extractive paths
+  streaming, since those have no token stream at all.
 - Coverage note: it fell from 95% to 91% because pgvector.py's database code cannot run
   without Docker. That is the honest number, not a regression in test quality, and it should
   climb back once the docker-marked tests can run. Do not "fix" it by deleting assertions.
