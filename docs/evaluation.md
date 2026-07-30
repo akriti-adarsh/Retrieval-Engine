@@ -131,24 +131,25 @@ It is also the only configuration that can refuse at all, which is discussed bel
 
 The cost is severe. Reranking is roughly two thirds of end-to-end p95 latency on CPU.
 
-### Lexical beating dense is probably an artifact of my own test set
+### Lexical beating dense is probably an artifact of how the test set was built
 
 Lexical-only scored 0.683 recall@5 against dense-only at 0.400. A 28 point gap in favour of
 BM25 over a modern embedding model should not be reported as a finding without saying why it
 is suspicious.
 
-I wrote the golden questions while reading the passages they came from. Even while trying to
-paraphrase, a question written that way reuses the distinctive vocabulary of its source
-passage, and distinctive shared vocabulary is precisely what BM25 scores. The test set is
-therefore biased toward exact-token overlap, which hands BM25 an advantage no user query
-would give it.
+Every golden question was written with its evidence passage in view. The set is
+model-generated and substring-validated against the corpus, with human review still pending,
+which the README states in the same words. Even when the instruction is to paraphrase, a
+question written that way reuses the distinctive vocabulary of its source passage, and
+distinctive shared vocabulary is exactly what BM25 scores. The test set is therefore biased
+toward exact-token overlap, which hands BM25 an advantage no real user query would.
 
-There is a second possible explanation that I cannot rule out with this data: `bge-small` is a
-384-dimensional model, and dense academic text across 16,318 chunks is a hard setting for it.
-Both explanations predict the same table.
+A second explanation cannot be ruled out with this data: `bge-small` is a 384-dimensional
+model, and dense academic text across 16,318 chunks is a hard setting for it. Both
+explanations predict the same table.
 
-Separating them needs a second golden set written by someone who never saw the passages, which
-is real work I have not done. Until then, **the correct reading of this row is "unknown", not
+Separating them needs a second golden set authored without sight of the passages, which has
+not been built. Until then, **the correct reading of this row is "unknown", not
 "BM25 wins"**, and any conclusion that depends on the dense/lexical ordering should be
 treated as unsupported.
 
@@ -280,8 +281,8 @@ answerable.
 **Multi-hop sits between the two**, at 0.600. Single-vector retrieval finds one hop well and
 the second hop only when it happens to share vocabulary with the first.
 
-**Hard scores above medium** (0.692 against 0.625), which inverts the labels. My difficulty
-labels are a judgement I made while writing the questions, and this says they do not track
+**Hard scores above medium** (0.692 against 0.625), which inverts the labels. The difficulty
+labels are a judgement recorded while writing the questions, and this says they do not track
 what the retriever finds difficult. The labels are kept as recorded rather than quietly
 adjusted to match the results, since relabelling after seeing the scores is how a test set
 stops measuring anything.
@@ -342,7 +343,7 @@ Stated plainly, because a results page without this section is advertising.
 | 3 | One author wrote the questions, the answers, and the system | No independent judgement anywhere in the loop. |
 | 4 | Grounding is measured against extractive output | The 0.98 grounded rate is close to self-fulfilling and is not evidence about hallucination. |
 | 5 | One corpus, one domain | 303 arXiv `cs.CL` papers. Nothing here transfers to a corpus of support tickets or contracts without re-measuring. |
-| 6 | Difficulty labels do not predict measured difficulty | Hard scored above medium, so the per-difficulty breakdown describes my labelling, not the retriever. |
+| 6 | Difficulty labels do not predict measured difficulty | Hard scored above medium, so the per-difficulty breakdown describes the labelling, not the retriever. |
 | 7 | Single seed | Everything is seeded at 42 and deterministic, so the run reproduces exactly, but variance across seeds is unmeasured. |
 
 The first two matter most. Together they mean this evaluation is good enough to justify a

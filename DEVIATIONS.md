@@ -161,7 +161,19 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
     the published numbers describe a code path no user ever hits.
     *What was done:* `AnswerService` lives in one module that both layers call.
 
-14. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+14. **The published ablation has no multi-query row, because no model server exists here.**
+   *Spec said:* the ablation matrix in section 8 includes `hybrid + rerank + multi-query`.
+   *Reality is:* multi-query expansion needs a language model to write the paraphrases, and
+   Ollama is not installed on this machine. `http://localhost:11434/api/tags` does not answer
+   and there is no `ollama` binary on PATH, so the row cannot be produced.
+   *What was done:* the harness omits the row rather than running it with expansion silently
+   disabled, which would have published a duplicate of the `hybrid + rerank` row under a label
+   claiming a component was active. The same applies to HyDE. Both are implemented, both are
+   unit-tested against a fake LLM, and neither has a measured number attached anywhere. Two
+   rows the spec does not list were added instead, weighted fusion and fixed-token chunking,
+   because those need no model and do isolate one variable each.
+
+15. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error
