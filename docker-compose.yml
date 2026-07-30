@@ -1,5 +1,11 @@
-# Postgres with pgvector. The api, streamlit, and ollama services are added in the
-# containerisation commit; this file grows with them rather than describing them early.
+# The full stack. `docker compose up` brings up Postgres, the API, and the demo UI.
+#
+# Ollama is in the "llm" profile, so it does NOT start by default. That is deliberate and it
+# is the spec's requirement: the system must run with no model server at all, falling back to
+# extractive answering. Starting Ollama automatically would hide whether that fallback works.
+#
+#   docker compose up -d                    Postgres, API, Streamlit
+#   docker compose --profile llm up -d      the above plus Ollama
 #
 # The migrations directory is mounted into docker-entrypoint-initdb.d, which Postgres runs
 # only on an empty data directory. For an existing database, or a Postgres that is not this
@@ -31,5 +37,80 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      RE_STORE: pgvector
+      # The service name resolves on the compose network; localhost would be the container.
+      RE_POSTGRES_DSN: postgresql://retrieval:retrieval@postgres:5432/retrieval
+      RE_LLM: ollama
+      RE_OLLAMA_BASE_URL: http://ollama:11434
+      RE_LOG_JSON: "true"
+      RE_DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      # The corpus lives outside the image (per-paper licenses), so it is mounted in.
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+      target: runtime
+    command:
+      - streamlit
+      - run
+      - /app/ui/streamlit_app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+    environment:
+      RE_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    volumes:
+      # The UI is not baked into the image (.dockerignore excludes ui/), because it is a demo
+      # client rather than part of the service. Mounting it keeps the runtime image lean and
+      # lets the page be edited without a rebuild.
+      - ./ui:/app/ui:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  ollama_models:

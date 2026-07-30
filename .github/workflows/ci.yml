@@ -23,10 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The official installer rather than a third-party action: one less version to track,
+      # and it cannot break independently of uv itself.
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Cache uv downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Sync dependencies
         run: uv sync --frozen --python ${{ matrix.python-version }}
@@ -39,3 +48,74 @@ jobs:
 
       - name: Typecheck
         run: uv run mypy --strict src/
+
+      - name: Tests
+        # HF_HUB_OFFLINE is on because these tests use the deterministic fake embedder by
+        # design and must never reach the network. If they fail offline that is a
+        # test-isolation bug to fix, not a caching problem to work around.
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: uv run pytest --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=85
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  eval-gate:
+    name: eval regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Cache uv downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-eval-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-eval-
+
+      # Cached even though the gate uses the fake embedder, so that adding a real-model eval
+      # job later does not start by re-downloading 1.5 GB on every run.
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ runner.os }}-${{ hashFiles('src/retrieval_engine/config.py') }}
+          restore-keys: hf-${{ runner.os }}-
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      # A separate job from the main suite because it answers a different question: not "does
+      # the code work" but "did retrieval quality drop below the committed floor".
+      - name: Run the regression gate
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: uv run pytest tests/eval -v
+
+  docker:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build only, never push. The point is to catch a Dockerfile that stopped building,
+      # not to publish anything from CI.
+      - name: Build the runtime image
+        run: docker build --target runtime -t retrieval-engine:ci .
+
+      - name: Confirm the app factory imports inside the image
+        run: |
+          docker run --rm --entrypoint python retrieval-engine:ci -c \
+            "from retrieval_engine.api.app import create_app; print('app factory imports')"

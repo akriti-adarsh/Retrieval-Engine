@@ -1,0 +1,38 @@
+# Keep the build context small and the image reproducible. Anything not needed to RUN the
+# service is excluded, which also stops a local .env or a downloaded corpus from being baked
+# into an image and shipped somewhere.
+
+.git
+.github
+.venv
+venv
+
+# The corpus is downloaded at runtime and carries per-paper licenses, so it never belongs in
+# an image. eval_results and .drafts are build artifacts, not inputs.
+data
+eval_results
+.drafts
+
+tests
+ui
+docs
+
+.env
+.env.local
+docker-compose.override.yml
+
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.mypy_cache_*
+.ruff_cache
+.hypothesis
+.coverage
+.coverage.*
+htmlcov
+coverage.xml
+
+Thumbs.db
+.DS_Store
