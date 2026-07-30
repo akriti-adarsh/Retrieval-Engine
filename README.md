@@ -5,7 +5,7 @@ reciprocal rank fusion, cross-encoder reranking, grounding verification, and an 
 harness whose metrics are implemented from scratch and whose ablation numbers are published
 alongside the artifacts that produced them.
 
-[![ci](https://github.com/akriti-adarsh/retrieval-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/akriti-adarsh/retrieval-engine/actions/workflows/ci.yml)
+[![ci](https://github.com/akriti-adarsh/Retrieval-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/akriti-adarsh/Retrieval-Engine/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![tests](https://img.shields.io/badge/tests-559%20passing-brightgreen)
@@ -202,7 +202,7 @@ Full module map, data model, and request lifecycle: `docs/architecture.md` (pend
 Three commands from clone to a working query, on a machine with no API keys.
 
 ```bash
-git clone https://github.com/akriti-adarsh/retrieval-engine.git && cd retrieval-engine
+git clone https://github.com/akriti-adarsh/Retrieval-Engine.git && cd retrieval-engine
 make install                                    # uv sync --frozen
 make corpus                                     # fetch 300 arXiv cs.CL papers
 ```

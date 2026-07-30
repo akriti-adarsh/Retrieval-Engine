@@ -54,7 +54,7 @@ MAX_RETRIES = 5
 MAX_RETRY_AFTER_SECONDS = 300
 USER_AGENT = (
     "retrieval-engine-corpus-builder/0.1 "
-    "(+https://github.com/akriti-adarsh/retrieval-engine; OAI-PMH harvester)"
+    "(+https://github.com/akriti-adarsh/Retrieval-Engine; OAI-PMH harvester)"
 )
 
 
