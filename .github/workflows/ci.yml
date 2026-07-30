@@ -46,8 +46,12 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
 
+      # Both platforms explicitly. mypy narrows sys.platform to the host it runs on, so a
+      # single run on ubuntu silently skips every Windows-guarded branch, and a single run on
+      # a developer's Windows machine silently skips the Linux ones. The container images run
+      # Linux and the development here happens on Windows, so both have to be checked.
       - name: Typecheck
-        run: uv run mypy --strict src/
+        run: make typecheck
 
       - name: Tests
         # HF_HUB_OFFLINE is on because these tests use the deterministic fake embedder by

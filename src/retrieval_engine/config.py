@@ -56,11 +56,16 @@ def configure_event_loop() -> bool:
 
     Returns whether the policy was changed, so a caller can log it. On Linux, which is what
     the container images run, this is a no-op.
+
+    The test is for the policy class rather than for ``sys.platform``, and that is not a
+    stylistic choice. mypy narrows ``sys.platform`` to whichever platform it is running on, so
+    a ``sys.platform != "win32"`` guard turns everything below it into unreachable code when
+    the checker runs on Linux, which ``warn_unreachable`` then fails. Asking whether the
+    policy exists is the same test at runtime, since asyncio only defines it on Windows, and
+    it stays type-checked on every platform instead of being skipped on two of them.
     """
-    if sys.platform != "win32":
-        return False
     selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
-    if selector_policy is None:  # pragma: no cover - not reachable off Windows
+    if selector_policy is None:
         return False
     if isinstance(asyncio.get_event_loop_policy(), selector_policy):
         return False

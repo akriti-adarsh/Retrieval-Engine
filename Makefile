@@ -24,8 +24,12 @@ format:
 format-check:
 	$(UV) run ruff format --check .
 
+# Both platforms, always, whichever one you happen to be developing on. mypy narrows
+# sys.platform to the host it runs on, so a single run silently skips every branch guarded for
+# the other platform. Separate cache directories keep both runs incremental.
 typecheck:
-	$(UV) run mypy --strict src/
+	$(UV) run mypy --strict --platform linux --cache-dir .mypy_cache/linux src/
+	$(UV) run mypy --strict --platform win32 --cache-dir .mypy_cache/win32 src/
 
 test:
 	$(UV) run pytest --cov=src --cov-report=term-missing --cov-fail-under=$(COV_MIN)
