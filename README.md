@@ -200,7 +200,7 @@ Full module map, data model, and request lifecycle: [docs/architecture.md](docs/
 Three commands from clone to a working query, on a machine with no API keys.
 
 ```bash
-git clone https://github.com/akriti-adarsh/Retrieval-Engine.git && cd retrieval-engine
+git clone https://github.com/akriti-adarsh/Retrieval-Engine.git && cd Retrieval-Engine
 make install                                    # uv sync --frozen
 make corpus                                     # fetch 300 arXiv cs.CL papers
 ```
