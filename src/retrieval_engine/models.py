@@ -365,7 +365,13 @@ class ScoredChunk(Base):
 
 
 class StageTimings(Base):
-    """Millisecond breakdown of one request. Every field is measured, never estimated."""
+    """Millisecond breakdown of one request. Every field is measured, never estimated.
+
+    The fields deliberately do not sum to ``total_ms``. ``dense_ms`` and ``lexical_ms`` time
+    two branches that run concurrently, so they overlap each other, and ``retrieval_ms``
+    covers expansion through reranking as one block. Read ``retrieval_ms`` and ``total_ms``
+    for wall clock, and the individual stages for where that time went.
+    """
 
     expansion_ms: float = Field(default=0.0, ge=0.0)
     dense_ms: float = Field(default=0.0, ge=0.0)

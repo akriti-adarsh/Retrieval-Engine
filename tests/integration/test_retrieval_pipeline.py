@@ -7,6 +7,7 @@ looks fine and means nothing.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +144,44 @@ async def test_timings_are_measured_not_guessed(ready: dict[str, Any]) -> None:
     assert result.timings.retrieval_ms > 0.0
     assert result.timings.total_ms == result.timings.retrieval_ms
     assert result.timings.rerank_ms >= 0.0
+
+
+async def test_dense_and_lexical_are_timed_separately(tmp_path: Path, corpus_dir: Path) -> None:
+    """Each concurrent branch measures itself, rather than both reporting the block.
+
+    This asserts against a real regression. The two stages used to share one measurement of
+    the surrounding ``asyncio.gather``, which made them identical in every eval artifact and
+    made BM25 look as expensive as an embedding forward pass. A single number copied into two
+    fields is indistinguishable from a real one unless something checks that they can differ.
+    """
+    settings = _settings(tmp_path)
+    store = MemoryVectorStore()
+    embedder = FakeEmbedder(dimension=FAKE_DIMENSION)
+    await IngestPipeline(settings, store, embedder).ingest_directory(corpus_dir, progress=False)
+
+    class SlowBM25(RecordingBM25):
+        """Lexical retrieval with a delay far larger than any scheduling noise."""
+
+        async def retrieve(self, query: str, top_k: int, **kwargs: Any) -> list[ScoredChunk]:
+            await asyncio.sleep(0.25)
+            return await super().retrieve(query, top_k, **kwargs)
+
+    pipeline = RetrievalPipeline(
+        settings,
+        store,
+        embedder,
+        reranker=CrossEncoderReranker(settings, StubCrossEncoder),
+        lexical=SlowBM25(store, tmp_path / "bm25"),
+        llm=FakeLLM(),
+    )
+
+    result = await pipeline.retrieve("reciprocal rank fusion")
+
+    assert result.timings.lexical_ms >= 250.0
+    assert result.timings.dense_ms < result.timings.lexical_ms
+    # The block waits for the slower branch, and the two overlap rather than queueing, so
+    # retrieval covers lexical without being the sum of both.
+    assert result.timings.retrieval_ms >= result.timings.lexical_ms
 
 
 async def test_retrieval_is_deterministic(ready: dict[str, Any]) -> None:

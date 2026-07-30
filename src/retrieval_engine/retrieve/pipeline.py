@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Mapping, Sequence
 from pathlib import Path
+from typing import TypeVar
 
 from retrieval_engine.config import Settings
 from retrieval_engine.embed.base import Embedder
@@ -68,8 +69,23 @@ Question: {query}
 """
 
 
+_T = TypeVar("_T")
+
+
 def _elapsed_ms(started: float) -> float:
     return (time.perf_counter() - started) * 1000.0
+
+
+async def _timed(awaitable: Awaitable[_T]) -> tuple[_T, float]:
+    """Await something and return its result alongside how long it took, in milliseconds.
+
+    Used for stages that run concurrently. Two branches awaited together each measure their
+    own wall clock, so their times overlap and deliberately do not sum to the elapsed time of
+    the block containing them. ``retrieval_ms`` is the figure to read for the block.
+    """
+    started = time.perf_counter()
+    result = await awaitable
+    return result, _elapsed_ms(started)
 
 
 class RetrievalPipeline:
@@ -211,13 +227,14 @@ class RetrievalPipeline:
         timings.expansion_ms = _elapsed_ms(started)
 
         # Dense and lexical run concurrently: they share no state and one should not wait
-        # on the other.
-        started = time.perf_counter()
-        dense_lists, lexical_lists = await asyncio.gather(
-            self._dense_lists(queries, extra_vectors, active, filters),
-            self._lexical_lists(queries, active, filters),
+        # on the other. Each branch is timed inside its own coroutine rather than timing the
+        # gather once and reporting that figure as both, which is what this used to do. That
+        # made the two stages numerically identical in every eval artifact and implied BM25
+        # cost as much as an embedding forward pass, which is not remotely true.
+        (dense_lists, timings.dense_ms), (lexical_lists, timings.lexical_ms) = await asyncio.gather(
+            _timed(self._dense_lists(queries, extra_vectors, active, filters)),
+            _timed(self._lexical_lists(queries, active, filters)),
         )
-        timings.dense_ms = timings.lexical_ms = _elapsed_ms(started)
 
         started = time.perf_counter()
         all_lists = [*dense_lists, *lexical_lists]
