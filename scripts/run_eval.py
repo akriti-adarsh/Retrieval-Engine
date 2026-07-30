@@ -136,6 +136,10 @@ async def run(args: argparse.Namespace) -> int:
     harness = EvalHarness(settings, corpus_dir, llm=llm)
 
     rows = ablation_matrix() if args.ablate else [Row("hybrid + rerank", settings.retrieval)]
+    # A single-config run must NOT write to ablation.json. It did, and a routine `make eval`
+    # replaced a committed seven-row ablation with a one-row table. The full matrix costs over
+    # two hours to rebuild, so the report name follows what was actually run.
+    report_name = "ablation" if args.ablate else "eval_default"
     skipped = [row.label for row in rows if row.needs_llm and not has_llm]
     rows = [row for row in rows if not (row.needs_llm and not has_llm)]
     if skipped:
@@ -172,9 +176,9 @@ async def run(args: argparse.Namespace) -> int:
 
         # Rewrite the report after every row. A full-corpus ablation takes over an hour, and
         # results that only land at the end are results you lose to an interrupted run.
-        write_ablation(results_root, report)
+        write_ablation(results_root, report, name=report_name)
 
-    paths = write_ablation(results_root, report)
+    paths = write_ablation(results_root, report, name=report_name)
     print("\n" + render_ablation_table(report))
     print(f"\nWrote {paths['markdown']} and {paths['json']}")
 

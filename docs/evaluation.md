@@ -39,9 +39,11 @@ Three results here work against the design rather than for it, and none of them 
 | Seed | 42 | `ablation.json` → `seed` |
 
 Chunk counts are given per strategy because they are a property of the strategy, not of the
-corpus. `ablation.json` carries a single top-level `corpus_chunks`, and it holds whichever
-index was built last (the semantic one), so it should not be read as "the corpus has 16,454
-chunks". That is a reporting wart in the artifact and it is recorded rather than papered over.
+corpus. `ablation.json` carries a single top-level `corpus_chunks` of 16,454, and
+`scripts/run_eval.py` computes it as the **maximum** across every index the run built, which
+is the semantic one. It should not be read as "the corpus has 16,454 chunks" for any
+particular configuration. That is a reporting wart in the artifact, recorded here rather than
+papered over.
 
 The corpus is 303 recent arXiv `cs.CL` papers, harvested through OAI-PMH by
 `scripts/download_corpus.py`. The generator is the extractive fallback rather than Ollama,
@@ -269,10 +271,21 @@ at 0.3 would refuse every question ever asked. The pipeline therefore sets
 `threshold_applied=False` when no calibrated score exists, and the harness records refusal
 accuracy as 0.000 rather than inventing a comparison.
 
-Only the cross-encoder produces a score with a stable interpretation. Measured over six live
-queries against the real model, relevant passages scored 0.81 to 0.97 and an out-of-corpus
-question scored 0.0000. The configured threshold of 0.3 sits in the empty gap between those
-clusters, which is why it was chosen there and not tuned to flatter the table.
+Only the cross-encoder produces a score with a stable interpretation, and the evidence for
+that is now recorded per question rather than asserted. Every eval row carries `top_score`,
+the exact value the threshold is compared against. Across all 60 golden questions
+([`eval_results/02042ae6-recursive_structural/rows.jsonl`](../eval_results/02042ae6-recursive_structural/rows.jsonl)):
+
+| outcome | n | top_score range |
+|---|---|---|
+| answered | 43 | 0.4138 to 0.9996 |
+| refused | 17 | 0.0001 to 0.2878 |
+
+**Nothing at all falls between 0.2878 and 0.4138.** The configured threshold of 0.3 sits
+inside that empty gap, so it is not a tuned number: anywhere in that interval produces exactly
+the same decisions on this set. The threshold was originally justified by a distribution
+observed by hand over six queries, which was a claim rather than a measurement, and recording
+`top_score` is what turned it into one.
 
 With reranking on, refusal accuracy is 1.000 **and** false refusal is 0.140. Both numbers are
 needed: the first alone would also be produced by a system that refuses everything, and the
@@ -385,12 +398,43 @@ The first fix would be a GPU for the cross-encoder, and the second would be rera
 candidates instead of 60, which is a `top_k_rerank` change and would need re-measuring rather
 than assuming.
 
-**The per-stage dense and lexical split is not quoted from this run.** Those two stages run
-concurrently, and until commit `3a3267a` the pipeline timed the block containing both and
-wrote that single figure into both fields, which made them identical to thirteen decimal
-places in every row of `ablation.json`. The instrumentation is fixed and has a regression
-test, but the committed artifact predates the fix, so quoting a dense-against-lexical
-comparison from it would be quoting a number this repository has already proven wrong.
+### The dense against lexical split, from a separate clean run
+
+`ablation.json` cannot answer this. Until commit `3a3267a` the pipeline timed the block
+containing both concurrent branches and wrote that one figure into both fields, which made
+them identical to thirteen decimal places in every row. The whole matrix was measured before
+the fix, so the split had to come from re-running the default configuration afterwards:
+[`eval_results/eval_default.json`](../eval_results/eval_default.json).
+
+| stage | p50 | p95 |
+|---|---|---|
+| dense | 344.4 ms | 704.5 ms |
+| lexical | 146.2 ms | 329.2 ms |
+
+**Dense retrieval costs about 2.4x lexical**, which is the shape you would expect and is
+nothing like the equality the broken instrumentation implied. The two run concurrently, so
+they overlap and do not sum to the retrieval block.
+
+### The same configuration, measured twice, differs by 27 percent
+
+That re-run is worth more than the split it was for, because it accidentally measured
+something else. It ran the identical configuration, corpus, golden set, and seed:
+
+| | ablation run | clean re-run |
+|---|---|---|
+| recall@5, nDCG@5, MRR, citation precision | 0.703 / 0.603 / 0.589 / 0.320 | identical to four decimals |
+| total p95 | 21,644 ms | 15,744 ms |
+| rerank p95 | 15,167 ms | 11,355 ms |
+
+**Every quality metric reproduced exactly. Latency did not, by 27 percent.** The difference is
+machine load: the ablation was a two-hour job building indexes and running other rows, and it
+shared the machine with the development work that was happening alongside it.
+
+So the quality numbers on this page are reproducible in the strong sense, and the latency
+numbers are accurate for the run that produced them and should be read as an order of
+magnitude rather than to the millisecond. The p95 figures in the results table all come from
+the same ablation, so they remain comparable against each other, which is what the table is
+for.
 
 Expansion reads as 0.006 ms because the ablation runs with `expansion=none`. It is the cost of
 returning the query unchanged, not the cost of multi-query or HyDE, both of which require a
@@ -414,7 +458,8 @@ Stated plainly, because a results page without this section is advertising.
 | 4 | Grounding is measured against extractive output | The 0.98 grounded rate is close to self-fulfilling and is not evidence about hallucination. |
 | 5 | One corpus, one domain | 303 arXiv `cs.CL` papers. Nothing here transfers to a corpus of support tickets or contracts without re-measuring. |
 | 6 | Difficulty labels do not predict measured difficulty | Hard scored above medium, so the per-difficulty breakdown describes the labelling, not the retriever. |
-| 7 | Single seed | Everything is seeded at 42 and deterministic, so the run reproduces exactly, but variance across seeds is unmeasured. |
+| 7 | Single seed | Everything is seeded at 42. Quality metrics reproduce exactly across processes, confirmed by re-running the default config, but variance across seeds is unmeasured. |
+| 8 | Latency was measured under varying machine load | The same configuration re-measured on a quieter machine was 27 percent faster. p95 figures are comparable within the table and should not be read to the millisecond. |
 
 The first two matter most. Together they mean this evaluation is good enough to justify a
 design decision the size of "use a reranker" and not good enough to justify one the size of

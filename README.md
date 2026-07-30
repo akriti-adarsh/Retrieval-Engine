@@ -8,8 +8,8 @@ alongside the artifacts that produced them.
 [![ci](https://github.com/akriti-adarsh/Retrieval-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/akriti-adarsh/Retrieval-Engine/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-559%20passing-brightgreen)
-![coverage](https://img.shields.io/badge/coverage-89%25-brightgreen)
+![tests](https://img.shields.io/badge/tests-555%20passing-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-89.11%25-brightgreen)
 
 **It runs with zero API keys.** The default embedder is local, the default generator is a
 local Ollama model, and if Ollama is not running the service falls back to extractive
@@ -76,11 +76,11 @@ recorded command.
 | Ingest throughput | 2,654 tokens/second on CPU, structural chunking | `eval_results/index_build.md` |
 | Full corpus index build | 26.5 min structural, 20.3 min fixed-token, 53.5 min semantic | `eval_results/index_build.md` |
 | Full ablation matrix | 2.15 hours, seven configurations | `eval_results/ablation.json` |
-| Test suite | 559 passing, 1 deselected | `make test` |
-| Coverage | 89 percent, gate at 85 | `make test` |
+| Test suite | 555 passing, 1 deselected (the docker-marked test) | `make test` |
+| Coverage | 89.11 percent, gate at 85 | `make test` |
 | `mypy --strict` | Clean across 43 source files | `make typecheck` |
 | Regression gate, fixture corpus | recall@5 0.750, nDCG@5 0.570, MRR 0.510, refusal accuracy 0.250 | `src/retrieval_engine/eval/baseline.json` |
-| Reranker score separation | Relevant 0.81 to 0.97, out-of-corpus 0.0000 | Six live queries, recorded in `CLAUDE.md` |
+| Reranker score separation | Answered 0.4138 to 0.9996, refused 0.0001 to 0.2878, nothing in between | `eval_results/02042ae6-recursive_structural/rows.jsonl`, all 60 questions |
 | Extractive fallback with Ollama stopped | HTTP 200, cited answer, `grounded: true` | Live `curl`, recorded in `CLAUDE.md` |
 
 The fixture-corpus gate numbers are **not** retrieval quality claims. They are a pipeline
@@ -706,9 +706,9 @@ make check       # lint, format check, mypy strict, then tests
 
 | Property | Value |
 |---|---|
-| Tests | 559 passing, 1 deselected (requires Docker) |
-| Coverage | 89 percent, gate at 85 |
-| `mypy --strict` | Clean on `src/` |
+| Tests | 555 passing, 1 deselected (requires Docker) |
+| Coverage | 89.11 percent, gate at 85 |
+| `mypy --strict` | Clean on `src/`, checked under both `--platform linux` and `--platform win32` |
 | `ruff` | Clean, lint and format |
 | `TODO` / `FIXME` / `NotImplementedError` in `src/` | Zero |
 
