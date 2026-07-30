@@ -1,0 +1,146 @@
+{
+  "run_id": "91549409-semantic",
+  "label": "hybrid + rerank, semantic chunking",
+  "config": {
+    "use_dense": true,
+    "use_lexical": true,
+    "top_k_dense": 50,
+    "top_k_lexical": 50,
+    "fusion": "rrf",
+    "rrf_k": 60,
+    "dense_weight": 0.5,
+    "use_rerank": true,
+    "rerank_candidates": 20,
+    "final_top_k": 5,
+    "expansion": "none",
+    "num_paraphrases": 3,
+    "chunk_strategy": "semantic",
+    "use_query_instruction": true,
+    "hnsw_ef_search": 64
+  },
+  "embedder": "BAAI/bge-small-en-v1.5",
+  "generator": "extractive",
+  "prompt_version": "v1",
+  "n_queries": 60,
+  "metrics": {
+    "recall@5": 0.672,
+    "precision@5": 0.16400000000000003,
+    "hit_rate@5": 0.74,
+    "mrr": 0.5523333333333333,
+    "ndcg@5": 0.5615897662394823,
+    "citation_precision": 0.28,
+    "answer_similarity": 0.6912720629185123,
+    "refusal_accuracy": 0.9,
+    "grounded_rate": 0.98,
+    "false_refusal_rate": 0.12
+  },
+  "by_category": {
+    "factual": {
+      "recall@5": 0.76875,
+      "ndcg@5": 0.6555271546720659,
+      "mrr": 0.6364583333333333,
+      "refused_rate": 0.03125,
+      "n": 32.0
+    },
+    "negative": {
+      "recall@5": 0.0,
+      "ndcg@5": 0.0,
+      "mrr": 0.0,
+      "refused_rate": 0.9,
+      "n": 10.0
+    },
+    "ambiguous": {
+      "recall@5": 0.375,
+      "ndcg@5": 0.25770078895560633,
+      "mrr": 0.21875,
+      "refused_rate": 0.25,
+      "n": 8.0
+    },
+    "multi_hop": {
+      "recall@5": 0.6,
+      "ndcg@5": 0.5041013050823153,
+      "mrr": 0.55,
+      "refused_rate": 0.3,
+      "n": 10.0
+    }
+  },
+  "by_difficulty": {
+    "medium": {
+      "recall@5": 0.5892857142857143,
+      "ndcg@5": 0.48250233680443727,
+      "mrr": 0.44761904761904764,
+      "n": 28.0
+    },
+    "easy": {
+      "recall@5": 0.8999999999999999,
+      "ndcg@5": 0.8296448354424297,
+      "mrr": 0.8703703703703703,
+      "n": 9.0
+    },
+    "hard": {
+      "recall@5": 0.6923076923076923,
+      "ndcg@5": 0.5463553355744618,
+      "mrr": 0.5576923076923077,
+      "n": 13.0
+    }
+  },
+  "latency": {
+    "expansion": {
+      "p50_ms": 0.005400041118264198,
+      "p95_ms": 0.011299969628453255,
+      "mean_ms": 0.005775009049102664,
+      "max_ms": 0.014599994756281376
+    },
+    "dense": {
+      "p50_ms": 354.7378000803292,
+      "p95_ms": 835.7063999865204,
+      "mean_ms": 405.6570650039551,
+      "max_ms": 1435.353200067766
+    },
+    "lexical": {
+      "p50_ms": 354.7378000803292,
+      "p95_ms": 835.7063999865204,
+      "mean_ms": 405.6570650039551,
+      "max_ms": 1435.353200067766
+    },
+    "fusion": {
+      "p50_ms": 1.003500074148178,
+      "p95_ms": 1.8322000978514552,
+      "mean_ms": 1.0879366755640756,
+      "max_ms": 2.473599975928664
+    },
+    "rerank": {
+      "p50_ms": 7773.449100088328,
+      "p95_ms": 9535.314100096002,
+      "mean_ms": 7440.339243324706,
+      "max_ms": 10741.721199941821
+    },
+    "retrieval": {
+      "p50_ms": 8069.1255000419915,
+      "p95_ms": 9921.816400019452,
+      "mean_ms": 7847.1720316757755,
+      "max_ms": 10980.07300007157
+    },
+    "generation": {
+      "p50_ms": 1654.5138000510633,
+      "p95_ms": 4166.667200042866,
+      "mean_ms": 1682.6406183303334,
+      "max_ms": 4341.6006999323145
+    },
+    "grounding": {
+      "p50_ms": 1060.607299907133,
+      "p95_ms": 2587.948900065385,
+      "mean_ms": 1086.8699200024519,
+      "max_ms": 3017.7805999992415
+    },
+    "total": {
+      "p50_ms": 10410.115499980748,
+      "p95_ms": 14941.729199956171,
+      "mean_ms": 10617.324561668405,
+      "max_ms": 15420.27500004042
+    }
+  },
+  "started_at": "2026-07-30T17:08:15.236193Z",
+  "elapsed_seconds": 3539.6569066999946,
+  "seed": 42
+}

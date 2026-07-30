@@ -16,6 +16,15 @@ Everything else was small, mixed, or explainable by how the test set was built. 
 pipeline beats BM25 alone by 2.0 points of recall@5, which is a much less impressive headline
 than "hybrid retrieval with reranking", and it is the honest one.
 
+Three results here work against the design rather than for it, and none of them was removed:
+
+- **Semantic chunking, the most expensive strategy, finished last.** It costs 2.02x the
+  default to build and scored below it on every retrieval metric.
+- **Fusing dense with lexical made retrieval worse** than lexical alone, 0.577 against 0.683,
+  before reranking rescued it.
+- **The dense-against-lexical gap is not a measurement.** The golden questions were written
+  with their evidence in view, which favours BM25, so that row is reported as unknown.
+
 ---
 
 ## What was measured, and on what
@@ -23,11 +32,16 @@ than "hybrid retrieval with reranking", and it is the honest one.
 | property | value | where it comes from |
 |---|---|---|
 | Corpus documents | 303 | `ablation.json` → `corpus_docs` |
-| Corpus chunks | 16,318 | `ablation.json` → `corpus_chunks` |
+| Corpus chunks | 16,318 structural, 9,727 fixed-token, 16,454 semantic | [`eval_results/index_build.md`](../eval_results/index_build.md) |
 | Golden questions | 60 | `ablation.json` → `golden_questions` |
 | Embedder | `BAAI/bge-small-en-v1.5` | `ablation.json` → `embedder` |
 | Generator | `extractive` | `ablation.json` → `generator` |
 | Seed | 42 | `ablation.json` → `seed` |
+
+Chunk counts are given per strategy because they are a property of the strategy, not of the
+corpus. `ablation.json` carries a single top-level `corpus_chunks`, and it holds whichever
+index was built last (the semantic one), so it should not be read as "the corpus has 16,454
+chunks". That is a reporting wart in the artifact and it is recorded rather than papered over.
 
 The corpus is 303 recent arXiv `cs.CL` papers, harvested through OAI-PMH by
 `scripts/download_corpus.py`. The generator is the extractive fallback rather than Ollama,
@@ -114,7 +128,24 @@ Seven configurations, one corpus, one golden set, one seed. Full per-row detail 
 per-category and per-difficulty breakdowns is in
 [`eval_results/ablation.md`](../eval_results/ablation.md).
 
-<!-- RESULTS-TABLE -->
+| config | recall@5 | precision@5 | hit@5 | MRR | nDCG@5 | refusal acc | false refusal | p95 |
+|---|---|---|---|---|---|---|---|---|
+| dense only | 0.400 | 0.088 | 0.420 | 0.302 | 0.318 | 0.000 | 0.000 | 3.5 s |
+| lexical only | 0.683 | 0.168 | 0.740 | 0.553 | 0.568 | 0.000 | 0.000 | 7.0 s |
+| hybrid (RRF) | 0.577 | 0.136 | 0.620 | 0.428 | 0.460 | 0.000 | 0.000 | 5.2 s |
+| **hybrid + rerank** (default) | **0.703** | 0.176 | 0.760 | 0.589 | **0.603** | 1.000 | 0.140 | 21.6 s |
+| hybrid (weighted) + rerank | 0.703 | 0.176 | 0.760 | 0.565 | 0.585 | 1.000 | 0.140 | 11.8 s |
+| hybrid + rerank, fixed-token chunking | 0.670 | 0.212 | 0.760 | 0.594 | 0.584 | 0.700 | 0.180 | 18.7 s |
+| hybrid + rerank, semantic chunking | 0.672 | 0.164 | 0.740 | 0.552 | 0.562 | 0.900 | 0.120 | 14.9 s |
+
+Total wall clock for the matrix: **2.15 hours** on CPU. Rows sharing a chunking strategy share
+one cached index, so the first row using each strategy pays to build it.
+
+Two rows the spec's matrix asks for are absent: `hybrid + rerank + multi-query`, and HyDE.
+Both need a language model to write the expansions, and no Ollama is installed on this
+machine. The harness omits them rather than running them with expansion silently disabled,
+which would publish a copy of the `hybrid + rerank` row under a label claiming a component was
+active. `DEVIATIONS.md` entry 14 records this.
 
 ---
 
@@ -129,7 +160,7 @@ reranker sees the same candidate list either way and simply orders it better.
 
 It is also the only configuration that can refuse at all, which is discussed below.
 
-The cost is severe. Reranking is roughly two thirds of end-to-end p95 latency on CPU.
+The cost is severe. Reranking is about 70 percent of end-to-end p95 latency on CPU.
 
 ### Lexical beating dense is probably an artifact of how the test set was built
 
@@ -188,6 +219,45 @@ With reranking on both, recall@5 is identical at 0.703. RRF is slightly better o
 RRF stays the default, but on this evidence the honest statement is that the fusion method
 barely matters once a reranker is present, because the reranker reorders the candidates
 anyway. Fusion's job in that configuration is recall of the candidate pool, not ordering.
+
+### The most expensive chunking strategy lost
+
+Three chunking strategies, all with hybrid retrieval and reranking, so chunking is the only
+variable. Build cost is from [`eval_results/index_build.md`](../eval_results/index_build.md).
+
+| strategy | recall@5 | nDCG@5 | MRR | precision@5 | chunks | build |
+|---|---|---|---|---|---|---|
+| `recursive_structural` (default) | **0.703** | **0.603** | 0.589 | 0.176 | 16,318 | 26.5 min |
+| `fixed_token` | 0.670 | 0.584 | **0.594** | **0.212** | 9,727 | 20.3 min |
+| `semantic` | 0.672 | 0.562 | 0.552 | 0.164 | 16,454 | 53.5 min |
+
+**Semantic chunking is the most sophisticated strategy here and it came last.** It embeds
+every sentence to find topic boundaries by cosine distance, costs 2.02x structural chunking to
+build, and scored below it on recall, nDCG, MRR, and precision alike. If any result in this
+project deserved to be quietly dropped, it is this one, which is exactly why it is here.
+
+The 2.02x figure is worth pausing on, because ADR 003 predicted before any of this ran that
+semantic chunking would "roughly double ingestion cost". Both builds embedded essentially the
+same text (4,224,502 tokens against 4,224,426), so the extra hour bought nothing but the
+boundary search.
+
+There is a plausible mechanism, offered as a hypothesis rather than a measurement: the semantic
+threshold is a percentile of the distances within a document, so it is document-relative, and
+these are long papers. It produced 16,454 chunks against structural's 16,318, which is a
+1 percent difference in granularity for twice the price. ADR 003 called this consequence out
+in advance too. Confirming it would need the chunk-size distribution per strategy, which was
+not recorded, so the mechanism stays a hypothesis and only the cost and the scores are claims.
+
+**Structural against fixed-token is genuinely mixed**, and reporting it as a clean win would
+be wrong. Structural takes recall@5 (0.703 against 0.670) and nDCG@5 (0.603 against 0.584).
+Fixed-token takes precision@5 (0.212 against 0.176) and MRR (0.594 against 0.589). That shape
+is consistent: uniform 512-token windows are more likely to contain a whole evidence span, so
+each returned chunk is more often relevant, while structural sections of uneven size cover more
+of the span set overall.
+
+Structural stays the default on recall, nDCG, and the fact that its `section_path` is true of
+the whole chunk, which is what a citation shows a reader. Fixed-token also had the worst
+refusal behaviour of the three (0.700 accuracy at 0.180 false refusal).
 
 ### Refusal only works when a reranker is present, by design
 
@@ -304,8 +374,8 @@ the `hybrid + rerank` row of `ablation.json`.
 | grounding | 1,170 ms | 3,481 ms |
 | **total** | **13,317 ms** | **21,644 ms** |
 
-These are slow, and the shape is the interesting part: **the cross-encoder is about 95 percent
-of retrieval time and roughly two thirds of the total**. Reranking 60 candidate passages means
+These are slow, and the shape is the interesting part: **the cross-encoder is about 97 percent
+of retrieval time and about 70 percent of the total**. Reranking 60 candidate passages means
 60 full transformer forward passes with no batching win to be had on CPU.
 
 That is the trade this project makes explicit. Reranking bought the largest quality
@@ -376,10 +446,11 @@ the stub scorer's actual output scale, so the refusal path is genuinely exercise
 make corpus            # 303 arXiv cs.CL papers via OAI-PMH, 3s delay between requests
 make golden-validate   # 60 entries, exact-substring span check
 make eval              # the default configuration
-make eval-ablate       # every row in the table above, several hours on CPU
+make eval-ablate       # every row in the table above, 2.15 hours measured on CPU
 ```
 
-The ablation takes several hours on CPU, and most of that is the cross-encoder. Row order
+The ablation took 2.15 hours on CPU, and most of that is index building plus the
+cross-encoder. Row order
 matters for wall clock but not for results: the first row using each chunking strategy pays
 for building that index and the rest reuse it.
 

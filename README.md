@@ -20,21 +20,50 @@ mocked.
 
 ## Results
 
-> **The ablation has not been run on the full corpus yet, so this section has no numbers in
-> it.** Writing plausible ones would defeat the purpose of the harness, so the table below is
-> deliberately absent rather than estimated. Everything needed to produce it is committed and
-> the command is one line:
->
-> ```bash
-> make eval-ablate    # roughly 90 minutes on CPU, measured at 2,435 tokens/second
-> ```
->
-> It writes `eval_results/ablation.md` and `eval_results/ablation.json`, plus a per-run
-> directory with `run.json` and `rows.jsonl`. The rows it will contain are: dense only,
-> lexical only, hybrid RRF, hybrid plus rerank, hybrid weighted plus rerank, and hybrid plus
-> rerank under fixed-token and semantic chunking. Multi-query and HyDE rows are included only
-> when a local model is reachable, and omitted otherwise rather than run with expansion
-> silently disabled.
+Seven configurations over **303 arXiv `cs.CL` papers** and **60 golden questions**, 2.15 hours
+of CPU. Every cell is read from [`eval_results/ablation.json`](eval_results/ablation.json).
+
+| config | recall@5 | nDCG@5 | MRR | refusal acc | false refusal | p95 latency |
+|---|---|---|---|---|---|---|
+| dense only | 0.400 | 0.318 | 0.302 | 0.000 | 0.000 | 3.5 s |
+| lexical only | 0.683 | 0.568 | 0.553 | 0.000 | 0.000 | 7.0 s |
+| hybrid (RRF) | 0.577 | 0.460 | 0.428 | 0.000 | 0.000 | 5.2 s |
+| **hybrid + rerank** (default) | **0.703** | **0.603** | 0.589 | 1.000 | 0.140 | 21.6 s |
+| hybrid (weighted) + rerank | 0.703 | 0.585 | 0.565 | 1.000 | 0.140 | 11.8 s |
+| hybrid + rerank, fixed-token chunking | 0.670 | 0.584 | 0.594 | 0.700 | 0.180 | 18.7 s |
+| hybrid + rerank, semantic chunking | 0.672 | 0.562 | 0.552 | 0.900 | 0.120 | 14.9 s |
+
+**Read the awkward rows first.** [docs/evaluation.md](docs/evaluation.md) is the full analysis,
+including what should not be trusted.
+
+- **Reranking is the only large win.** It moved recall@5 from 0.577 to 0.703 and nDCG from
+  0.460 to 0.603, and it is the only configuration that can refuse at all. It also costs about
+  70 percent of end-to-end latency on CPU.
+- **The full pipeline beats plain BM25 by 2.0 points of recall@5**, 0.703 against 0.683. That
+  is a modest return on a lot of machinery, and it is the honest headline.
+- **Fusion made things worse before reranking fixed them.** Hybrid RRF (0.577) scored below
+  lexical alone (0.683). RRF gives every input list an equal vote, so fusing a weak list with
+  a strong one drags the strong one down.
+- **Semantic chunking, the most expensive strategy, came last.** It costs 2.02x the default to
+  build and lost on recall, nDCG, MRR, and precision.
+- **The 28 point dense-against-lexical gap is not a finding.** The golden questions were
+  written with their evidence passages in view, which reuses source vocabulary and hands BM25
+  exact-token overlap. That row is reported as unknown, not as "BM25 beats embeddings".
+- **Refusal accuracy is 0.000 without a reranker by design**, not because the guardrail broke.
+  RRF scores cluster near 0.03 and carry no absolute meaning, so the pipeline declines to
+  threshold them rather than inventing a comparison.
+
+`refusal accuracy` never appears without `false refusal` beside it, because refusing every
+question also scores 1.000 on the first.
+
+Two rows the spec asks for are missing: multi-query and HyDE. Both need a model to write the
+expansions and no Ollama is installed here, so the harness omits them rather than running them
+with expansion silently off, which would duplicate the row above under a label claiming
+otherwise. `DEVIATIONS.md` entry 14 records it.
+
+```bash
+make eval-ablate    # reproduces the table, 2.15 hours measured on CPU
+```
 
 ### What has actually been measured
 
@@ -44,8 +73,9 @@ recorded command.
 | Measurement | Value | Where it came from |
 |---|---|---|
 | Corpus harvested | 303 documents, 278 with full text, 18,042,170 characters | `data/corpus/manifest.json` |
-| Ingest throughput | 2,435 tokens/second on CPU | Timed run over a 10 document sample |
-| Full corpus index build | About 30 minutes, so about 90 for all three chunking strategies | Projected from the above |
+| Ingest throughput | 2,654 tokens/second on CPU, structural chunking | `eval_results/index_build.md` |
+| Full corpus index build | 26.5 min structural, 20.3 min fixed-token, 53.5 min semantic | `eval_results/index_build.md` |
+| Full ablation matrix | 2.15 hours, seven configurations | `eval_results/ablation.json` |
 | Test suite | 559 passing, 1 deselected | `make test` |
 | Coverage | 89 percent, gate at 85 | `make test` |
 | `mypy --strict` | Clean across 43 source files | `make typecheck` |
@@ -69,8 +99,9 @@ regression floor measured with a deterministic fake embedder, explained in
 | Docker image, compose stack, full CI | Complete |
 | Streamlit UI (`make ui`) | Complete |
 | `docs/architecture.md`, three ADRs | Complete |
-| Ablation results (`eval_results/`) | See the Results section above |
-| `docs/evaluation.md` | See the Results section above |
+| Ablation results (`eval_results/`) | Complete. Seven configurations, 2.15 hours, artifacts committed |
+| `docs/evaluation.md` | Complete, including the threats to validity |
+| Multi-query and HyDE ablation rows | Not measured. No model server on this machine (`DEVIATIONS.md` 14) |
 
 `DEVIATIONS.md` records every deviation from the specification as spec said, reality is, what
 was done. `CLAUDE.md` carries the build state and the measurements above.
@@ -643,7 +674,7 @@ chunking comparison depends on. There is a test that splits a span deliberately.
 ```bash
 make corpus            # 303 arXiv cs.CL papers, rate-limited to arXiv's 3-second ask
 make golden-validate   # exact-substring check against the corpus
-make eval-ablate       # the full matrix, roughly 90 minutes on CPU
+make eval-ablate       # the full matrix, 2.15 hours measured on CPU
 ```
 
 Artifacts land in `eval_results/`: `ablation.md` and `ablation.json` for the matrix, plus a
@@ -760,12 +791,12 @@ retrieval-engine/
 ├── migrations/                ordered SQL, applied by compose or scripts/migrate.py
 ├── docs/
 │   ├── architecture.md        module map, data model, request lifecycle
-│   ├── evaluation.md          the measured results, discussed (pending)
+│   ├── evaluation.md          the measured results, discussed
 │   ├── BUILD_SPEC.md          the specification this was built against
 │   └── decisions/             three ADRs
 ├── ui/streamlit_app.py        demo client over HTTP
 ├── data/golden/               the committed golden set
-├── eval_results/              ablation artifacts (pending)
+├── eval_results/              ablation artifacts, committed
 ├── CLAUDE.md                  standing rules and build state
 └── DEVIATIONS.md              every place this differs from the spec, and why
 ```
@@ -813,6 +844,8 @@ is, what was done.
 | Multi-query and HyDE ablation rows | **Not measured.** No local model was installed, and the harness omits those rows rather than running them with expansion silently disabled, which would duplicate the row above while claiming to measure something |
 | Generated answers (as opposed to extractive) | Code path tested against a fake and against a genuinely stopped server. Not measured end to end with a real Ollama model |
 | Golden set human review | **Pending.** The set is model-authored and substring-validated |
+| Dense against lexical retrieval quality | **Not measured.** The questions were written with their evidence in view, which favours BM25. Separating that bias from model quality needs a golden set authored without sight of the passages |
+| Semantic chunking mechanism | The 2.02x build cost and the scores are measured. The explanation, that a document-relative percentile yields few boundaries on long papers, is a hypothesis: the chunk-size distribution was not recorded |
 
 Two library behaviours worth knowing before reading the numbers:
 

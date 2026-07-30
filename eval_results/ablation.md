@@ -5,7 +5,7 @@ Generated 2026-07-30T14:59:24.551180+00:00
 | property | value |
 |---|---|
 | corpus documents | 303 |
-| corpus chunks | 16318 |
+| corpus chunks | 16454 |
 | golden questions | 60 |
 | embedder | `BAAI/bge-small-en-v1.5` |
 | generator | `extractive` |
@@ -22,6 +22,7 @@ Generated 2026-07-30T14:59:24.551180+00:00
 | hybrid + rerank | 0.703 | 0.603 | 0.589 | 1.000 | 0.140 | 21644 ms |
 | hybrid (weighted) + rerank | 0.703 | 0.585 | 0.565 | 1.000 | 0.140 | 11765 ms |
 | hybrid + rerank, fixed-token chunking | 0.670 | 0.584 | 0.594 | 0.700 | 0.180 | 18657 ms |
+| hybrid + rerank, semantic chunking | 0.672 | 0.562 | 0.552 | 0.900 | 0.120 | 14942 ms |
 
 `false refusal` is the fraction of answerable questions that were refused. It is
 reported next to refusal accuracy because a system can score perfectly on one by
@@ -454,6 +455,78 @@ Run `ab6cfff6-fixed_token`, 60 questions, 1641.9s wall clock.
   "expansion": "none",
   "num_paraphrases": 3,
   "chunk_strategy": "fixed_token",
+  "use_query_instruction": true,
+  "hnsw_ef_search": 64
+}
+```
+
+## hybrid + rerank, semantic chunking
+
+Run `91549409-semantic`, 60 questions, 3539.7s wall clock.
+
+### Metrics
+
+| metric | value |
+|---|---|
+| answer_similarity | 0.691 |
+| citation_precision | 0.280 |
+| false_refusal_rate | 0.120 |
+| grounded_rate | 0.980 |
+| hit_rate@5 | 0.740 |
+| mrr | 0.552 |
+| ndcg@5 | 0.562 |
+| precision@5 | 0.164 |
+| recall@5 | 0.672 |
+| refusal_accuracy | 0.900 |
+
+### By category
+
+| category | n | recall@5 | nDCG@5 | MRR |
+|---|---|---|---|---|
+| ambiguous | 8 | 0.375 | 0.258 | 0.219 |
+| factual | 32 | 0.769 | 0.656 | 0.636 |
+| multi_hop | 10 | 0.600 | 0.504 | 0.550 |
+| negative | 10 | 0.000 | 0.000 | 0.000 |
+
+### By difficulty
+
+| difficulty | n | recall@5 | nDCG@5 | MRR |
+|---|---|---|---|---|
+| easy | 9 | 0.900 | 0.830 | 0.870 |
+| hard | 13 | 0.692 | 0.546 | 0.558 |
+| medium | 28 | 0.589 | 0.483 | 0.448 |
+
+### Stage latency
+
+| stage | p50 | p95 | mean | max |
+|---|---|---|---|---|
+| expansion | 0.0 ms | 0.0 ms | 0.0 ms | 0.0 ms |
+| dense | 354.7 ms | 835.7 ms | 405.7 ms | 1435.4 ms |
+| lexical | 354.7 ms | 835.7 ms | 405.7 ms | 1435.4 ms |
+| fusion | 1.0 ms | 1.8 ms | 1.1 ms | 2.5 ms |
+| rerank | 7773.4 ms | 9535.3 ms | 7440.3 ms | 10741.7 ms |
+| retrieval | 8069.1 ms | 9921.8 ms | 7847.2 ms | 10980.1 ms |
+| generation | 1654.5 ms | 4166.7 ms | 1682.6 ms | 4341.6 ms |
+| grounding | 1060.6 ms | 2587.9 ms | 1086.9 ms | 3017.8 ms |
+| total | 10410.1 ms | 14941.7 ms | 10617.3 ms | 15420.3 ms |
+
+### Exact configuration
+
+```json
+{
+  "use_dense": true,
+  "use_lexical": true,
+  "top_k_dense": 50,
+  "top_k_lexical": 50,
+  "fusion": "rrf",
+  "rrf_k": 60,
+  "dense_weight": 0.5,
+  "use_rerank": true,
+  "rerank_candidates": 20,
+  "final_top_k": 5,
+  "expansion": "none",
+  "num_paraphrases": 3,
+  "chunk_strategy": "semantic",
   "use_query_instruction": true,
   "hnsw_ef_search": 64
 }
