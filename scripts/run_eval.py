@@ -170,6 +170,10 @@ async def run(args: argparse.Namespace) -> int:
         )
         print(f"    {headline}")
 
+        # Rewrite the report after every row. A full-corpus ablation takes over an hour, and
+        # results that only land at the end are results you lose to an interrupted run.
+        write_ablation(results_root, report)
+
     paths = write_ablation(results_root, report)
     print("\n" + render_ablation_table(report))
     print(f"\nWrote {paths['markdown']} and {paths['json']}")
