@@ -97,7 +97,17 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
    real `bge-small` model. pgvector follows once Docker is up. The test suite needs no
    database by design, so nothing else was blocked.
 
-10. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+10. **BM25 contributes nothing on a very small index, which shapes how to read the ablation.**
+    *Spec said:* lexical retrieval via `rank-bm25`, fused with dense (sections 1 and 5).
+    *Reality is:* `rank_bm25` computes IDF as `log(N - df + 0.5) - log(df + 0.5)` with no
+    smoothing, so a term appearing in half or more of a small corpus has an IDF of zero or
+    below. On a two-chunk index a term in one chunk scores exactly zero.
+    *What was done:* nothing was changed, because that is correct BM25 rather than a bug.
+    It is documented in the module docstring and pinned by a test, so the "lexical only"
+    ablation row is read as a statement about the real corpus size and not mistaken for a
+    broken retriever.
+
+11. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error

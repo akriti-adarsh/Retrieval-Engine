@@ -18,11 +18,11 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-7 and 9 done; commit 8 (pgvector) deferred, see DEVIATIONS 9.
-  Last completed: "feat(ingest): orchestrated pipeline with change detection"
-- Suite at last commit: 265 passed in 19.30s · Coverage: 95%
-- Open deviations: 10 · Next up: commit 8 (pgvector, needs Docker), then commits 10-13
-  (retrieval: dense, lexical, RRF, rerank)
+- Plan position: spec commits 1-7, 9, and 10 done; commit 8 (pgvector) deferred, see
+  DEVIATIONS 9. Last completed: "feat(retrieve): dense and lexical retrievers"
+- Suite at last commit: 293 passed in 22.09s · Coverage: 95%
+- Open deviations: 11 · Next up: commits 11-13 (RRF fusion, cross-encoder rerank, orchestrated
+  retrieval pipeline), then commit 8 (pgvector) once Docker runs
 - Session A boundary check PASSED with the real model, not the fake: ingesting
   docs/BUILD_SPEC.md + README.md + CLAUDE.md gave "3 changed, 36 chunks created, 10316 tokens
   embedded in 18.95s", and the immediate re-run gave "0 changed, 3 unchanged, 0 chunks
