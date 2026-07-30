@@ -87,6 +87,9 @@ pretty = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# The repo root on sys.path, so tests can import the shared fakes from tests.conftest
+# as one module rather than pytest importing conftest twice under two names.
+pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = ["-q", "--strict-markers", "--strict-config", "-m", "not docker"]
 markers = [
