@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Downloaded corpus: arxiv papers carry per-paper licenses, so the texts are not
+# redistributed here. The manifest with SHA256s is committed; run the download script.
+data/corpus/*
+!data/corpus/.gitkeep
+data/corpus/manifest.json.tmp
+
+# Derived retrieval artifacts
+data/index/
+data/bm25/
+
+# Model caches
+.cache/
+models/
+
+# Local docker overrides
+docker-compose.override.yml
+
+# OS
+Thumbs.db
+.DS_Store
