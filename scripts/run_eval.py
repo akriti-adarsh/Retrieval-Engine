@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from retrieval_engine.config import Settings, get_settings
+from retrieval_engine.config import Settings, configure_event_loop, get_settings
 from retrieval_engine.eval.golden import load_golden_set
 from retrieval_engine.eval.report import (
     render_ablation_table,
@@ -208,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         help="Also write the CI regression baseline from the default configuration.",
     )
     args = parser.parse_args(argv)
+    # Before the loop exists: psycopg's async pool cannot use Windows' default loop.
+    configure_event_loop()
     return asyncio.run(run(args))
 
 

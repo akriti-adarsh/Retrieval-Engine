@@ -10,6 +10,7 @@ suite stays database-free as the spec requires.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import pytest
@@ -25,13 +26,20 @@ from retrieval_engine.store.pgvector import (
     _vector_literal,
 )
 
+#: Deliberately NOT prefixed RE_: conftest strips every RE_ variable to isolate tests from the
+#: developer environment, so an RE_POSTGRES_DSN override would be swallowed before it arrived.
+#: Set this when the compose Postgres is remapped, which docker-compose.override.yml does when
+#: 5432 is already taken on the host.
+DSN_ENV = "TEST_POSTGRES_DSN"
+DEFAULT_DSN = "postgresql://retrieval:retrieval@127.0.0.1:5432/retrieval"
+
 
 def _settings(**overrides: Any) -> Settings:
     base: dict[str, Any] = {
         "_env_file": None,
         "env": "test",
         "store": StoreKind.PGVECTOR,
-        "postgres_dsn": "postgresql://retrieval:retrieval@127.0.0.1:5432/retrieval",
+        "postgres_dsn": os.environ.get(DSN_ENV, DEFAULT_DSN),
     }
     base.update(overrides)
     return Settings(**base)

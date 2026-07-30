@@ -291,8 +291,9 @@ A minimal client:
 ```python
 import httpx, json
 
-with httpx.stream("POST", "http://localhost:8000/v1/query/stream",
-                  json={"query": "what does k do in RRF?"}) as response:
+with httpx.stream(
+    "POST", "http://localhost:8000/v1/query/stream", json={"query": "what does k do in RRF?"}
+) as response:
     for line in response.iter_lines():
         if line.startswith("data: "):
             payload = json.loads(line[6:])

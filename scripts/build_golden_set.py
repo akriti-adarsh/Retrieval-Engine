@@ -25,7 +25,7 @@ import json
 import sys
 from pathlib import Path
 
-from retrieval_engine.config import Settings, get_settings
+from retrieval_engine.config import Settings, configure_event_loop, get_settings
 from retrieval_engine.errors import GoldenSetValidationError, LLMUnavailableError
 from retrieval_engine.eval.golden import (
     load_golden_set,
@@ -212,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--count", type=int, default=60, help="How many candidates to draft.")
     args = parser.parse_args(argv)
 
+    configure_event_loop()
     settings = get_settings()
     if args.generate:
         return asyncio.run(command_generate(settings, args))

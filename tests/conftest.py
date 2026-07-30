@@ -22,10 +22,22 @@ from pathlib import Path
 
 import pytest
 
-from retrieval_engine.config import DEFAULT_SEED, Settings, reset_settings_cache, set_seeds
+from retrieval_engine.config import (
+    DEFAULT_SEED,
+    Settings,
+    configure_event_loop,
+    reset_settings_cache,
+    set_seeds,
+)
 from retrieval_engine.embed.base import EmbedderInfo
 from retrieval_engine.errors import LLMUnavailableError
 from retrieval_engine.models import Document, LLMKind, StoreKind
+
+# Must run at import time, before pytest-asyncio creates a loop. psycopg's async pool
+# cannot run on Windows' default ProactorEventLoop, and the failure it produces is a pool
+# timeout that names nothing useful.
+configure_event_loop()
+
 
 # --------------------------------------------------------------------------------------
 # Environment isolation

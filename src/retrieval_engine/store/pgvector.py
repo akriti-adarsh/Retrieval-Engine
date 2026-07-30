@@ -133,37 +133,38 @@ class PgVectorStore:
         from psycopg.rows import dict_row
 
         pool = await self._get_pool()
-        async with pool.connection() as connection:
-            connection.row_factory = dict_row
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT name, embedder, dimension, created_at FROM collections WHERE name = %s",
-                    (self._collection,),
+        async with (
+            pool.connection() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(
+                "SELECT name, embedder, dimension, created_at FROM collections WHERE name = %s",
+                (self._collection,),
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                existing = CollectionInfo(
+                    name=row["name"],
+                    embedder=row["embedder"],
+                    dimension=row["dimension"],
+                    created_at=row["created_at"],
                 )
-                row = await cursor.fetchone()
-                if row is not None:
-                    existing = CollectionInfo(
-                        name=row["name"],
-                        embedder=row["embedder"],
-                        dimension=row["dimension"],
-                        created_at=row["created_at"],
-                    )
-                    check_embedding_space(existing, embedder)
-                else:
-                    await cursor.execute(
-                        "INSERT INTO collections (name, embedder, dimension) VALUES (%s, %s, %s)",
-                        (self._collection, embedder.name, embedder.dimension),
-                    )
-                    existing = CollectionInfo(
-                        name=self._collection,
-                        embedder=embedder.name,
-                        dimension=embedder.dimension,
-                    )
+                check_embedding_space(existing, embedder)
+            else:
                 await cursor.execute(
-                    "SELECT count(*) AS total FROM chunks WHERE collection = %s",
-                    (self._collection,),
+                    "INSERT INTO collections (name, embedder, dimension) VALUES (%s, %s, %s)",
+                    (self._collection, embedder.name, embedder.dimension),
                 )
-                counted = await cursor.fetchone()
+                existing = CollectionInfo(
+                    name=self._collection,
+                    embedder=embedder.name,
+                    dimension=embedder.dimension,
+                )
+            await cursor.execute(
+                "SELECT count(*) AS total FROM chunks WHERE collection = %s",
+                (self._collection,),
+            )
+            counted = await cursor.fetchone()
         existing.chunk_count = int(counted["total"]) if counted else 0
         self._info = existing
         return existing
@@ -172,16 +173,17 @@ class PgVectorStore:
         from psycopg.rows import dict_row
 
         pool = await self._get_pool()
-        async with pool.connection() as connection:
-            connection.row_factory = dict_row
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    "SELECT c.name, c.embedder, c.dimension, c.created_at, "
-                    "(SELECT count(*) FROM chunks WHERE collection = c.name) AS total "
-                    "FROM collections c WHERE c.name = %s",
-                    (self._collection,),
-                )
-                row = await cursor.fetchone()
+        async with (
+            pool.connection() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(
+                "SELECT c.name, c.embedder, c.dimension, c.created_at, "
+                "(SELECT count(*) FROM chunks WHERE collection = c.name) AS total "
+                "FROM collections c WHERE c.name = %s",
+                (self._collection,),
+            )
+            row = await cursor.fetchone()
         if row is None:
             return None
         return CollectionInfo(
@@ -283,17 +285,19 @@ class PgVectorStore:
             "ORDER BY embedding <=> %s::vector, chunk_id LIMIT %s"
         )
 
-        async with pool.connection() as connection:
-            connection.row_factory = dict_row
-            # SET LOCAL lasts only for the surrounding transaction, which is exactly the
-            # scope wanted: per-query effort without touching the server's global setting.
-            async with connection.transaction(), connection.cursor() as cursor:
-                await cursor.execute(f"SET LOCAL hnsw.ef_search = {int(effort)}")
-                await cursor.execute(
-                    query,
-                    (vector, self._collection, *filter_params, vector, top_k),
-                )
-                rows = await cursor.fetchall()
+        # SET LOCAL lasts only for the surrounding transaction, which is exactly the
+        # scope wanted: per-query effort without touching the server's global setting.
+        async with (
+            pool.connection() as connection,
+            connection.transaction(),
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(f"SET LOCAL hnsw.ef_search = {int(effort)}")
+            await cursor.execute(
+                query,
+                (vector, self._collection, *filter_params, vector, top_k),
+            )
+            rows = await cursor.fetchall()
 
         return [SearchHit(chunk=_to_chunk(row), score=float(row["similarity"])) for row in rows]
 
@@ -301,15 +305,16 @@ class PgVectorStore:
         from psycopg.rows import dict_row
 
         pool = await self._get_pool()
-        async with pool.connection() as connection:
-            connection.row_factory = dict_row
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    f"SELECT {CHUNK_COLUMNS} FROM chunks WHERE collection = %s "
-                    "ORDER BY doc_id, start_char",
-                    (self._collection,),
-                )
-                rows = await cursor.fetchall()
+        async with (
+            pool.connection() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(
+                f"SELECT {CHUNK_COLUMNS} FROM chunks WHERE collection = %s "
+                "ORDER BY doc_id, start_char",
+                (self._collection,),
+            )
+            rows = await cursor.fetchall()
         return [_to_chunk(row) for row in rows]
 
     async def list_documents(
@@ -324,22 +329,23 @@ class PgVectorStore:
         pool = await self._get_pool()
         count_clause, filter_params = _filter_clause(filters)
         page_clause, _ = _filter_clause(filters, column="d.metadata")
-        async with pool.connection() as connection:
-            connection.row_factory = dict_row
-            async with connection.cursor() as cursor:
-                await cursor.execute(
-                    f"SELECT count(*) AS total FROM documents WHERE collection = %s{count_clause}",
-                    (self._collection, *filter_params),
-                )
-                counted = await cursor.fetchone()
-                await cursor.execute(
-                    "SELECT d.doc_id, d.source_path, d.title, d.metadata, "
-                    "(SELECT count(*) FROM chunks WHERE doc_id = d.doc_id) AS chunk_count "
-                    f"FROM documents d WHERE d.collection = %s{page_clause} "
-                    "ORDER BY d.doc_id LIMIT %s OFFSET %s",
-                    (self._collection, *filter_params, limit, offset),
-                )
-                rows = await cursor.fetchall()
+        async with (
+            pool.connection() as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(
+                f"SELECT count(*) AS total FROM documents WHERE collection = %s{count_clause}",
+                (self._collection, *filter_params),
+            )
+            counted = await cursor.fetchone()
+            await cursor.execute(
+                "SELECT d.doc_id, d.source_path, d.title, d.metadata, "
+                "(SELECT count(*) FROM chunks WHERE doc_id = d.doc_id) AS chunk_count "
+                f"FROM documents d WHERE d.collection = %s{page_clause} "
+                "ORDER BY d.doc_id LIMIT %s OFFSET %s",
+                (self._collection, *filter_params, limit, offset),
+            )
+            rows = await cursor.fetchall()
 
         items = [
             DocumentInfo(

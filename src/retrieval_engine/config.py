@@ -7,6 +7,7 @@ clone with no environment at all runs entirely locally with no API keys.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import sys
 from functools import lru_cache
@@ -43,6 +44,28 @@ def set_seeds(seed: int = DEFAULT_SEED) -> None:
         manual_seed = getattr(torch_module, "manual_seed", None)
         if callable(manual_seed):
             manual_seed(seed)
+
+
+def configure_event_loop() -> bool:
+    """Select an event loop policy psycopg's async pool can actually use on Windows.
+
+    Python defaults to ``ProactorEventLoop`` on Windows, and psycopg refuses to run in async
+    mode on it, failing with a pool timeout rather than anything that names the real cause.
+    The fix has to happen before the loop is created, so this is called from entry points
+    (scripts, tests) rather than from inside a running coroutine.
+
+    Returns whether the policy was changed, so a caller can log it. On Linux, which is what
+    the container images run, this is a no-op.
+    """
+    if sys.platform != "win32":
+        return False
+    selector_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+    if selector_policy is None:  # pragma: no cover - not reachable off Windows
+        return False
+    if isinstance(asyncio.get_event_loop_policy(), selector_policy):
+        return False
+    asyncio.set_event_loop_policy(selector_policy())
+    return True
 
 
 class Settings(BaseSettings):
@@ -209,6 +232,7 @@ def reset_settings_cache() -> None:
 __all__ = [
     "DEFAULT_SEED",
     "Settings",
+    "configure_event_loop",
     "get_settings",
     "reset_settings_cache",
     "set_seeds",
