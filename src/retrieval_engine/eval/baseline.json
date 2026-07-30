@@ -1,0 +1,21 @@
+{
+  "embedder": "fake-embedder",
+  "floors": {
+    "mrr": 0.4604,
+    "ndcg@5": 0.5202,
+    "recall@5": 0.7,
+    "refusal_accuracy": 0.2
+  },
+  "generator": "extractive",
+  "label": "regression gate",
+  "margin": 0.05,
+  "measured": {
+    "mrr": 0.5104166666666666,
+    "ndcg@5": 0.5702007889556063,
+    "recall@5": 0.75,
+    "refusal_accuracy": 0.25
+  },
+  "prompt_version": "v1",
+  "run_id": "825eb16bae01",
+  "seed": 42
+}

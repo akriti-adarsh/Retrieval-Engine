@@ -74,8 +74,16 @@ class BM25Retriever:
     def fingerprint(self) -> str | None:
         return self._fingerprint
 
-    def _load_persisted(self, fingerprint: str) -> list[list[str]] | None:
-        """Return persisted tokens when they match ``fingerprint``, else None."""
+    def _load_persisted(self, fingerprint: str) -> dict[str, list[str]] | None:
+        """Return persisted tokens keyed by chunk id, when they match ``fingerprint``.
+
+        Keyed by id, not returned as a list, and that is the whole point. The fingerprint is
+        deliberately order-independent so a re-ingest producing the same chunks does not force
+        a rebuild, but ingestion is concurrent, so documents land in completion order and the
+        chunk order genuinely varies between runs. Returning a plain list would pair each
+        chunk with whatever tokens happened to sit at its index, silently scoring chunks
+        against other chunks' text. Re-aligning by id is what makes the cache safe.
+        """
         path = self.index_path
         if not path.is_file():
             return None
@@ -88,9 +96,17 @@ class BM25Retriever:
         if payload.get("fingerprint") != fingerprint:
             return None
         tokens = payload.get("tokens")
-        if not isinstance(tokens, list):
+        chunk_ids = payload.get("chunk_ids")
+        if (
+            not isinstance(tokens, list)
+            or not isinstance(chunk_ids, list)
+            or len(tokens) != len(chunk_ids)
+        ):
             return None
-        return [[str(term) for term in document] for document in tokens]
+        return {
+            str(chunk_id): [str(term) for term in document]
+            for chunk_id, document in zip(chunk_ids, tokens, strict=True)
+        }
 
     def _persist(self, fingerprint: str, chunk_ids: list[str]) -> None:
         self._index_dir.mkdir(parents=True, exist_ok=True)
@@ -119,8 +135,9 @@ class BM25Retriever:
             return fingerprint
 
         persisted = self._load_persisted(fingerprint)
-        if persisted is not None and len(persisted) == len(chunks):
-            self._tokens = persisted
+        if persisted is not None and all(chunk.chunk_id in persisted for chunk in chunks):
+            # Ordered by the CURRENT chunk order, not the order they were written in.
+            self._tokens = [persisted[chunk.chunk_id] for chunk in chunks]
         else:
             self._tokens = [tokenize(chunk.text) for chunk in chunks]
             self.rebuild_count += 1

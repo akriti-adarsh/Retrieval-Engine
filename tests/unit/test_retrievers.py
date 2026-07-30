@@ -8,6 +8,7 @@ query pay for a rebuild.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -323,6 +324,83 @@ async def test_persisted_index_is_reused_by_a_new_process(tmp_path: Path) -> Non
 
     assert second.rebuild_count == 0
     assert results
+
+
+async def _store_with_pairs(pairs: list[tuple[int, str]]) -> MemoryVectorStore:
+    """A store holding exactly these (start_char, text) chunks, in the order given.
+
+    chunk_id derives from start_char, so two stores built from the same pairs in different
+    orders hold identical id to text mappings and share a fingerprint.
+    """
+    store = MemoryVectorStore()
+    embedder = FakeEmbedder()
+    await store.ensure_collection(embedder.info)
+    vectors = await embedder.embed_documents([text for _, text in pairs])
+    records = [
+        EmbeddedChunk(
+            chunk=Chunk(
+                chunk_id=make_chunk_id("doc-a", start),
+                doc_id="doc-a",
+                text=text,
+                start_char=start,
+                end_char=start + len(text),
+                token_count=len(text.split()),
+            ),
+            embedding=vector,
+        )
+        for (start, text), vector in zip(pairs, vectors, strict=True)
+    ]
+    await store.upsert_document(_document(), records)
+    return store
+
+
+async def test_a_reloaded_index_realigns_tokens_to_the_current_chunk_order(
+    tmp_path: Path,
+) -> None:
+    """Regression: a reload must not pair a chunk with another chunk's tokens.
+
+    The fingerprint is order-independent on purpose, so a re-ingest producing the same chunks
+    does not force a rebuild. But ingestion is concurrent, so chunk order genuinely varies
+    between runs. Loading tokens as a plain list scored each chunk against whatever text sat
+    at its index, which produced different results on identical corpora. The persisted index
+    is keyed by chunk id and re-aligned on load.
+    """
+    # Identical chunk id to text pairs in both stores. Only the INSERTION order differs, which
+    # is exactly what concurrent ingestion produces and what the fingerprint deliberately
+    # ignores.
+    pairs = [(index * 500, text) for index, text in enumerate(TEXTS.values())]
+    forward = await _store_with_pairs(pairs)
+    backward = await _store_with_pairs(list(reversed(pairs)))
+    assert [c.text for c in await forward.all_chunks()] != [
+        c.text for c in await backward.all_chunks()
+    ], "the fixture must actually differ in order, or this test proves nothing"
+
+    first = BM25Retriever(forward, tmp_path)
+    warm = await first.retrieve("bm25 idf weighting", top_k=4)
+    assert first.rebuild_count == 1
+
+    second = BM25Retriever(backward, tmp_path)
+    reloaded = await second.retrieve("bm25 idf weighting", top_k=4)
+
+    assert second.rebuild_count == 0, "the persisted index should have been reused"
+    assert [r.chunk.text for r in reloaded] == [r.chunk.text for r in warm]
+    assert [round(r.score, 9) for r in reloaded] == [round(r.score, 9) for r in warm]
+
+
+async def test_a_persisted_index_missing_a_chunk_id_rebuilds(tmp_path: Path) -> None:
+    """A cache whose ids do not cover the chunk set is a miss, not something to interpolate."""
+    store, _ = await _seeded()
+    retriever = BM25Retriever(store, tmp_path)
+    await retriever.ensure_index()
+
+    payload = json.loads(retriever.index_path.read_text(encoding="utf-8"))
+    payload["chunk_ids"][0] = "not-a-real-chunk-id"
+    retriever.index_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    fresh = BM25Retriever(store, tmp_path)
+    await fresh.ensure_index()
+
+    assert fresh.rebuild_count == 1
 
 
 async def test_a_corrupt_index_file_is_a_cache_miss_not_a_crash(tmp_path: Path) -> None:
