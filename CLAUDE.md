@@ -18,12 +18,13 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-7 and 9-12 done; commit 8 (pgvector) deferred, see
-  DEVIATIONS 9. Last completed: "feat(retrieve): cross-encoder reranking with cache"
-- Suite at last commit: 336 passed in 15.79s · Coverage: 95%
-- Open deviations: 11 · Next up: commit 13 (orchestrated four-stage retrieval pipeline with
-  multi-query and HyDE expansion), then commits 14-15 (generation, guardrails), with commit 8
-  (pgvector) still waiting on Docker
+- Plan position: spec commits 1-7 and 9-13 done; commit 8 (pgvector) deferred, see
+  DEVIATIONS 9. Last completed: "feat(retrieve): orchestrated retrieval pipeline"
+- Suite at last commit: 356 passed in 19.44s · Coverage: 95%
+- Open deviations: 11 · Next up: commits 14-15 (prompts, ollama client, extractive fallback,
+  then grounding and refusal). generate/base.py already defines the LLM protocol, and
+  tests/conftest.py already has FakeLLM, so commit 14 is implementations only. Commit 8
+  (pgvector) still waiting on Docker.
 - Session A boundary check PASSED with the real model, not the fake: ingesting
   docs/BUILD_SPEC.md + README.md + CLAUDE.md gave "3 changed, 36 chunks created, 10316 tokens
   embedded in 18.95s", and the immediate re-run gave "0 changed, 3 unchanged, 0 chunks

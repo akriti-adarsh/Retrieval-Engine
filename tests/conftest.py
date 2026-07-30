@@ -17,13 +17,14 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Sequence
 from pathlib import Path
 
 import pytest
 
 from retrieval_engine.config import DEFAULT_SEED, Settings, reset_settings_cache, set_seeds
 from retrieval_engine.embed.base import EmbedderInfo
+from retrieval_engine.errors import LLMUnavailableError
 from retrieval_engine.models import Document, LLMKind, StoreKind
 
 # --------------------------------------------------------------------------------------
@@ -150,6 +151,70 @@ class FakeEmbedder:
 def fake_embedder() -> FakeEmbedder:
     """A dimension-correct embedder with no model download and no network."""
     return FakeEmbedder()
+
+
+class FakeLLM:
+    """Canned-response language model that records every prompt it was given.
+
+    ``available=False`` makes every call raise :class:`LLMUnavailableError`, which is how
+    the tests exercise the degradation paths without stopping a real Ollama server.
+    """
+
+    def __init__(
+        self,
+        responses: Sequence[str] | None = None,
+        *,
+        available: bool = True,
+        model: str = "fake-llm",
+    ) -> None:
+        self._responses = list(responses) if responses is not None else []
+        self._available = available
+        self._model = model
+        self.prompts: list[str] = []
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def _next(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        if not self._available:
+            msg = "fake llm is configured as unavailable"
+            raise LLMUnavailableError(msg)
+        if self._responses:
+            return self._responses.pop(0)
+        return "A canned answer grounded in the provided sources [1]."
+
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        del max_tokens, temperature
+        return self._next(prompt)
+
+    async def stream(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> AsyncIterator[str]:
+        del max_tokens, temperature
+        text = self._next(prompt)
+        for word in text.split(" "):
+            yield f"{word} "
+
+    async def health(self) -> bool:
+        return self._available
+
+
+@pytest.fixture
+def fake_llm() -> FakeLLM:
+    """An LLM that answers instantly and never touches the network."""
+    return FakeLLM()
 
 
 # --------------------------------------------------------------------------------------
