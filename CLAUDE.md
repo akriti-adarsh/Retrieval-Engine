@@ -28,6 +28,46 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
   contract is identical whether or not the backend streamed. Wiring LLM token-by-token
   streaming through it is a separate change and must keep the refusal and extractive paths
   streaming, since those have no token stream at all.
+
+## Session B boundary check: PASSED
+Run against a live uvicorn on 127.0.0.1:8077 with `RE_STORE=memory`, `RE_LLM=ollama`, and
+Ollama genuinely not running (`/api/tags` timed out). Corpus was this repo's own four markdown
+docs, ingested through the API.
+
+- `POST /v1/ingest {"path":"corpus"}` gave `4 docs, 44 chunks, 13578 tokens in 12.1s`
+- `GET /health/ready` gave `ready=true, store=true, embedder=true, generator=false` with
+  detail "model server unreachable, answers will be extractive". Generation is excluded from
+  the readiness verdict on purpose, so a dead model server cannot pull the service out of
+  rotation.
+- `POST /v1/query` with the model server down returned **HTTP 200, answer_type=extractive,
+  model=extractive**, citations `[1]` and `[2]` both `resolved=true`, `grounded=true` with 0
+  flagged sentences. No 500 anywhere. This is the gate the spec asks for.
+- `POST /v1/query/stream` emitted `event: token` frames with JSON payloads (verified the em
+  dash arrived as `—`, so the JSON encoding is doing its job).
+- The reranker LRU works: an identical repeat query came back with `rerank_ms=0.0`.
+
+### Measured reranker score distribution, and why min_confidence=0.3 stands
+Six real queries against the real `bge-reranker-base`:
+
+| top score | outcome | query |
+|---|---|---|
+| 0.9711 | extractive | how is reciprocal rank fusion scored |
+| 0.8819 | extractive | what does the k parameter do in RRF |
+| 0.8285 | extractive | which chunking strategies are compared |
+| 0.8135 | extractive | what is the grounding threshold default |
+| 0.2655 | refused | what line coverage does the build require |
+| 0.0000 | refused | who won the world cup in 1998 |
+
+The distribution is sharply bimodal: genuinely relevant chunks land at 0.81 to 0.97, and an
+out-of-corpus question scores 0.0000. The spec's 0.3 default sits in the empty gap between
+those modes, so it is well chosen and should NOT be tuned to make a demo look better.
+
+The 0.2655 row is a real false refusal and worth understanding rather than hiding. Retrieval
+was correct: the top chunk is the one containing "Target >=85% line coverage". The chunk is a
+long mixed bullet list, and a cross-encoder dilutes across a passage that is mostly about
+other things. That is a chunking problem, not a threshold problem, which is exactly what the
+chunking ablation is built to measure. Do not "fix" it by lowering min_confidence; let the
+golden set's refusal_accuracy metric settle it with data.
 - Coverage note: it fell from 95% to 91% because pgvector.py's database code cannot run
   without Docker. That is the honest number, not a regression in test quality, and it should
   climb back once the docker-marked tests can run. Do not "fix" it by deleting assertions.
