@@ -18,9 +18,9 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: 2 of 26. Last completed: "feat(models): pydantic schemas"
-- Suite at last commit: 62 passed in 0.50s · Coverage: 99%
-- Open deviations: 2 · Next up: commits 3-9
+- Plan position: 3 of 26. Last completed: "feat(config): settings and logging"
+- Suite at last commit: 83 passed in 2.78s · Coverage: 99%
+- Open deviations: 2 · Next up: commits 4-9
 - Notes for next session: local dev is Windows; docker daemon was not running at scaffold time, so
   the pgvector path is validated separately from the default test suite (suite needs no database by
   design). Local python is 3.11.14 via uv, matching the CI matrix floor.
