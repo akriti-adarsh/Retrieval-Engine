@@ -1,16 +1,16 @@
-# CLAUDE.md — standing rules and state
+# CLAUDE.md: standing rules and state
 The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines the work.
 
-## Rules — non-negotiable
+## Rules, non-negotiable
 1. No TODO, FIXME, NotImplementedError, or stub bodies anywhere in src/. Ever.
 2. Dependency versions come from the resolver (`uv add` / `npm install`); commit the lockfile.
    Never hand-type a version number the resolver has not produced.
-3. Nothing is "done" until its command has run in THIS session with the real output shown —
+3. Nothing is "done" until its command has run in THIS session with the real output shown:
    the actual pytest summary line, the actual exit status. "Should pass" is not a status.
 4. Every number in a README or doc must exist in a committed artifact (eval_results/,
    benchmarks/results/, a CI log). An estimated or remembered number is a defect.
-5. When a library, API, or dataset differs from the spec — renamed function, changed endpoint,
-   auth now required — adapt to reality and add one line to DEVIATIONS.md
+5. When a library, API, or dataset differs from the spec (renamed function, changed endpoint,
+   auth now required), adapt to reality and add one line to DEVIATIONS.md
    (spec said / reality is / what was done). Never mock a real path to fake compliance.
 6. Never weaken, skip, or delete a test to make it pass. Fix the code or flag the conflict.
 7. One commit per plan milestone; the full test suite runs green before every commit.
@@ -62,8 +62,8 @@ docs, ingested through the API.
 - `POST /v1/query` with the model server down returned **HTTP 200, answer_type=extractive,
   model=extractive**, citations `[1]` and `[2]` both `resolved=true`, `grounded=true` with 0
   flagged sentences. No 500 anywhere. This is the gate the spec asks for.
-- `POST /v1/query/stream` emitted `event: token` frames with JSON payloads (verified the em
-  dash arrived as `—`, so the JSON encoding is doing its job).
+- `POST /v1/query/stream` emitted `event: token` frames with JSON payloads (a U+2014
+  character in the payload arrived intact, so the JSON encoding is doing its job).
 - The reranker LRU works: an identical repeat query came back with `rerank_ms=0.0`.
 
 ### Measured reranker score distribution, and why min_confidence=0.3 stands

@@ -21,6 +21,7 @@ Generated 2026-07-30T14:59:24.551180+00:00
 | hybrid (RRF) | 0.577 | 0.460 | 0.428 | 0.000 | 0.000 | 5236 ms |
 | hybrid + rerank | 0.703 | 0.603 | 0.589 | 1.000 | 0.140 | 21644 ms |
 | hybrid (weighted) + rerank | 0.703 | 0.585 | 0.565 | 1.000 | 0.140 | 11765 ms |
+| hybrid + rerank, fixed-token chunking | 0.670 | 0.584 | 0.594 | 0.700 | 0.180 | 18657 ms |
 
 `false refusal` is the fraction of answerable questions that were refused. It is
 reported next to refusal accuracy because a system can score perfectly on one by
@@ -381,6 +382,78 @@ Run `c5de53fe-recursive_structural`, 60 questions, 218.7s wall clock.
   "expansion": "none",
   "num_paraphrases": 3,
   "chunk_strategy": "recursive_structural",
+  "use_query_instruction": true,
+  "hnsw_ef_search": 64
+}
+```
+
+## hybrid + rerank, fixed-token chunking
+
+Run `ab6cfff6-fixed_token`, 60 questions, 1641.9s wall clock.
+
+### Metrics
+
+| metric | value |
+|---|---|
+| answer_similarity | 0.716 |
+| citation_precision | 0.303 |
+| false_refusal_rate | 0.180 |
+| grounded_rate | 0.980 |
+| hit_rate@5 | 0.760 |
+| mrr | 0.594 |
+| ndcg@5 | 0.584 |
+| precision@5 | 0.212 |
+| recall@5 | 0.670 |
+| refusal_accuracy | 0.700 |
+
+### By category
+
+| category | n | recall@5 | nDCG@5 | MRR |
+|---|---|---|---|---|
+| ambiguous | 8 | 0.375 | 0.285 | 0.281 |
+| factual | 32 | 0.734 | 0.663 | 0.661 |
+| multi_hop | 10 | 0.700 | 0.567 | 0.628 |
+| negative | 10 | 0.000 | 0.000 | 0.000 |
+
+### By difficulty
+
+| difficulty | n | recall@5 | nDCG@5 | MRR |
+|---|---|---|---|---|
+| easy | 9 | 0.889 | 0.848 | 0.833 |
+| hard | 13 | 0.769 | 0.612 | 0.656 |
+| medium | 28 | 0.554 | 0.485 | 0.487 |
+
+### Stage latency
+
+| stage | p50 | p95 | mean | max |
+|---|---|---|---|---|
+| expansion | 0.0 ms | 0.0 ms | 0.0 ms | 0.0 ms |
+| dense | 334.7 ms | 1238.9 ms | 459.6 ms | 1806.6 ms |
+| lexical | 334.7 ms | 1238.9 ms | 459.6 ms | 1806.6 ms |
+| fusion | 1.0 ms | 1.7 ms | 1.1 ms | 2.3 ms |
+| rerank | 8470.7 ms | 12471.6 ms | 8954.8 ms | 14180.5 ms |
+| retrieval | 8876.0 ms | 13214.1 ms | 9415.6 ms | 14387.3 ms |
+| generation | 2733.6 ms | 6356.9 ms | 2925.0 ms | 9527.8 ms |
+| grounding | 1378.2 ms | 3295.3 ms | 1339.7 ms | 4085.9 ms |
+| total | 13474.2 ms | 18656.8 ms | 13681.1 ms | 21839.5 ms |
+
+### Exact configuration
+
+```json
+{
+  "use_dense": true,
+  "use_lexical": true,
+  "top_k_dense": 50,
+  "top_k_lexical": 50,
+  "fusion": "rrf",
+  "rrf_k": 60,
+  "dense_weight": 0.5,
+  "use_rerank": true,
+  "rerank_candidates": 20,
+  "final_top_k": 5,
+  "expansion": "none",
+  "num_paraphrases": 3,
+  "chunk_strategy": "fixed_token",
   "use_query_instruction": true,
   "hnsw_ef_search": 64
 }

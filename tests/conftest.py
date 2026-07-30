@@ -58,6 +58,38 @@ def _isolated_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     reset_settings_cache()
 
 
+#: Names the tooling legitimately creates in the repository root during a run. Everything
+#: else appearing there is a test writing outside its tmp_path.
+_EXPECTED_ROOT_ARTIFACTS = frozenset({"coverage.xml", "htmlcov", "prof"})
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_test_writes_into_the_repo() -> Iterator[None]:
+    """Fail the session if a test leaves a file in the repository root.
+
+    This is a real defect that already happened once and reached a commit. A test built
+    ``BM25Retriever(store, Path("unused"))``, assuming a relative path it never read from was
+    inert. ``ensure_index`` persists there, so the test wrote a live BM25 index into the
+    working tree, and ``unused/bm25_index.json`` was committed and shipped.
+
+    Nothing in the suite noticed, because the test passed and the assertion it made was
+    correct. Only a check on the filesystem catches this, so the check lives here.
+    """
+    root = Path(__file__).resolve().parent.parent
+    before = {entry.name for entry in root.iterdir()}
+    yield
+    created = {
+        name
+        for name in {entry.name for entry in root.iterdir()} - before
+        # Dot-prefixed entries are caches from pytest, mypy, ruff, and coverage.
+        if not name.startswith(".") and name not in _EXPECTED_ROOT_ARTIFACTS
+    }
+    assert not created, (
+        f"tests wrote {sorted(created)} into the repository root. Use the tmp_path fixture: "
+        "a relative path handed to something that persists is not an unused path."
+    )
+
+
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     """Settings pointed at a temp directory, using only backends that need no server."""

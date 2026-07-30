@@ -430,14 +430,19 @@ async def test_a_fingerprint_mismatch_on_disk_forces_a_rebuild(tmp_path: Path) -
     assert fresh.rebuild_count == 1
 
 
-async def test_fingerprint_ignores_chunk_order() -> None:
-    """Two stores holding the same chunks in different orders share a fingerprint."""
+async def test_fingerprint_ignores_chunk_order(tmp_path: Path) -> None:
+    """Two stores holding the same chunks in different orders share a fingerprint.
+
+    Both retrievers get their own directory under tmp_path. They used to share a relative
+    Path("unused"), which is not an unused path at all: ensure_index persists there, so the
+    test wrote a real index into the repository root and it was committed as unused/.
+    """
     forward, _ = await _seeded()
     reversed_texts = dict(reversed(list(TEXTS.items())))
     backward, _ = await _seeded(texts=reversed_texts)
 
-    first = BM25Retriever(forward, Path("unused"))
-    second = BM25Retriever(backward, Path("unused"))
+    first = BM25Retriever(forward, tmp_path / "forward")
+    second = BM25Retriever(backward, tmp_path / "backward")
 
     assert await first.ensure_index() == await second.ensure_index()
 
