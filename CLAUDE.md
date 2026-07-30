@@ -18,16 +18,15 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: 3 of 26 complete, plus one interface-only commit that sits ahead of commits 6
-  and 7. Last completed: "feat(embed,store): embedder and vector store protocols"
-- Suite at last commit: 97 passed in 11.83s · Coverage: 97%
-- Open deviations: 4 · Next up: commits 4-9 (loaders, chunker, embed impls, store impls, pgvector,
+- Plan position: 4 of 26. Last completed: "feat(ingest): document loaders"
+- Suite at last commit: 134 passed in 13.43s · Coverage: 94%
+- Open deviations: 4 · Next up: commits 5-9 (embedders, chunker, store impls, pgvector,
   ingest pipeline)
 - Notes for next session:
-  - A parallel build of loaders, embedders, memory store, and chunker was cut off partway by a
-    session usage limit. Nothing from it was committed. Do not trust anything in `.drafts/`:
-    read `.drafts/README.md`, then either write real tests for a draft and verify it, or delete
-    it and write the module fresh. Two of those drafts have never been imported even once.
+  - Do not trust anything in `.drafts/`: read `.drafts/README.md`, then either write real tests
+    for a draft and verify it, or delete it and write the module fresh. The two module drafts
+    there (`embed/local.py`, `store/memory.py`) have never been imported even once. Loaders were
+    written fresh rather than recovered from a draft, which is the pattern to follow.
   - Build order matters here: the chunker needs the `Tokenizer` protocol from `embed/base.py`,
     so embedders come before the chunker regardless of the plan's numbering.
   - Both models are already in the local HuggingFace cache, so no download is needed:
