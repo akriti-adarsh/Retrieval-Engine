@@ -1,4 +1,4 @@
-# retrieval-engine
+# Retrieval Engine
 
 Production retrieval-augmented generation service: hybrid dense and BM25 retrieval,
 reciprocal rank fusion, cross-encoder reranking, grounding verification, and an evaluation
