@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol, cast
 
@@ -37,31 +38,52 @@ class SentenceTransformerLike(Protocol):
         """Encode a batch of texts into vectors."""
         ...
 
-    def get_sentence_embedding_dimension(self) -> int | None:
-        """Vector width, or None when the model does not report one."""
-        ...
+
+def reported_dimension(model: SentenceTransformerLike) -> int | None:
+    """The model's vector width, tolerating the sentence-transformers rename.
+
+    sentence-transformers 5.x renamed ``get_sentence_embedding_dimension`` to
+    ``get_embedding_dimension`` and warns on the old name. Prefer the new one, accept the
+    old one so an older pin still works, and treat neither being present as "unknown"
+    rather than as an error, since the configured dimension is then authoritative.
+    """
+    for name in ("get_embedding_dimension", "get_sentence_embedding_dimension"):
+        method = getattr(model, name, None)
+        if callable(method):
+            value = method()
+            return int(value) if value is not None else None
+    return None
 
 
 class HFTokenizer:
     """Token counts and character offsets from a HuggingFace fast tokenizer.
 
-    ``count_tokens`` is defined as ``len(token_spans(text))`` rather than as the raw
-    token-id count, because the chunker budgets against the spans it can actually slice
-    on. Keeping the two definitions identical means a chunk can never be assembled from
-    more spans than its own token budget allowed.
+    ``count_tokens`` reports the tokenizer's true count while ``token_spans`` returns only
+    the spans that consume characters. The two deliberately differ: markdown rules and
+    table separators tokenize into pieces that map to no characters, so counting only
+    sliceable spans undercounts. That undercount let 733-token chunks reach a model with a
+    512-token limit, where they were silently truncated and lost their tails. Budgeting on
+    the true count is conservative, which is the correct direction for this error.
+
+    Every call is serialised on a lock shared with the embedder. The fast tokenizer is a
+    Rust object that cannot be borrowed mutably from two threads at once, and encoding runs
+    in a worker thread while the chunker tokenizes on the event loop thread, so without
+    this concurrent ingestion dies with "Already borrowed".
     """
 
-    def __init__(self, tokenizer: Any) -> None:
+    def __init__(self, tokenizer: Any, lock: threading.Lock | None = None) -> None:
         self._tokenizer = tokenizer
+        self._lock = lock if lock is not None else threading.Lock()
 
     def token_spans(self, text: str) -> list[tuple[int, int]]:
         if not text:
             return []
-        encoded = self._tokenizer(
-            text,
-            add_special_tokens=False,
-            return_offsets_mapping=True,
-        )
+        with self._lock:
+            encoded = self._tokenizer(
+                text,
+                add_special_tokens=False,
+                return_offsets_mapping=True,
+            )
         offsets = encoded["offset_mapping"]
         spans = [(int(start), int(end)) for start, end in offsets if int(end) > int(start)]
         if spans:
@@ -71,7 +93,13 @@ class HFTokenizer:
         return [(match.start(), match.end()) for match in _WORD.finditer(text)]
 
     def count_tokens(self, text: str) -> int:
-        return len(self.token_spans(text))
+        """The tokenizer's own count, including tokens that consume no characters."""
+        if not text:
+            return 0
+        with self._lock:
+            encoded = self._tokenizer(text, add_special_tokens=False)
+        ids = encoded["input_ids"]
+        return len(ids)
 
 
 class LocalEmbedder:
@@ -92,6 +120,12 @@ class LocalEmbedder:
         self._model: SentenceTransformerLike | None = None
         self._tokenizer: HFTokenizer | None = None
         self._dimension: int | None = None
+        # Shared by the tokenizer wrapper and the encode path. The HuggingFace fast
+        # tokenizer is a Rust object that raises "Already borrowed" if two threads use it
+        # at once, and encoding runs in a worker thread while chunking tokenizes on the
+        # event loop thread. Serialising is also honest about the hardware: a CPU forward
+        # pass already saturates the cores, so nothing is lost by not overlapping them.
+        self._lock = threading.Lock()
 
     def _default_factory(self) -> SentenceTransformerLike:
         from sentence_transformers import SentenceTransformer
@@ -110,7 +144,7 @@ class LocalEmbedder:
         """Load the model once, verifying it produces the width the store expects."""
         if self._model is None:
             model = self._factory()
-            reported = model.get_sentence_embedding_dimension()
+            reported = reported_dimension(model)
             if reported is not None and reported != self._settings.embedding_dimension:
                 msg = (
                     f"model {self._settings.embedding_model!r} produces {reported}-dim vectors "
@@ -142,7 +176,7 @@ class LocalEmbedder:
     def tokenizer(self) -> HFTokenizer:
         model = self._load()
         if self._tokenizer is None:
-            self._tokenizer = HFTokenizer(model.tokenizer)
+            self._tokenizer = HFTokenizer(model.tokenizer, self._lock)
         return self._tokenizer
 
     def _rows(self, array: Any) -> list[list[float]]:
@@ -161,13 +195,14 @@ class LocalEmbedder:
         batch_size = self._settings.embedding_batch_size
         vectors: list[list[float]] = []
         for start in range(0, len(texts), batch_size):
-            array = model.encode(
-                texts[start : start + batch_size],
-                batch_size=batch_size,
-                normalize_embeddings=self._settings.normalize_embeddings,
-                convert_to_numpy=True,
-                show_progress_bar=False,
-            )
+            with self._lock:
+                array = model.encode(
+                    texts[start : start + batch_size],
+                    batch_size=batch_size,
+                    normalize_embeddings=self._settings.normalize_embeddings,
+                    convert_to_numpy=True,
+                    show_progress_bar=False,
+                )
             vectors.extend(self._rows(array))
         return vectors
 
@@ -188,4 +223,4 @@ class LocalEmbedder:
         return vectors[0]
 
 
-__all__ = ["HFTokenizer", "LocalEmbedder", "SentenceTransformerLike"]
+__all__ = ["HFTokenizer", "LocalEmbedder", "SentenceTransformerLike", "reported_dimension"]

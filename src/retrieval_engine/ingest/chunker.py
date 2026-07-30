@@ -117,8 +117,13 @@ def _hard_split(
     every strategy, including a single unbroken sentence longer than the budget.
     """
     fragment = document.text[start:end]
+    # The decision uses the tokenizer's true count and the slicing uses sliceable spans.
+    # These differ for text with tokens that consume no characters (markdown rules, table
+    # separators), and using the span count to decide would let oversized chunks through.
+    if tokenizer.count_tokens(fragment) <= max_tokens:
+        return [(start, end)]
     spans = tokenizer.token_spans(fragment)
-    if len(spans) <= max_tokens:
+    if not spans:
         return [(start, end)]
     pieces: list[tuple[int, int]] = []
     for first, last in _token_windows(len(spans), max_tokens, max_tokens):

@@ -64,6 +64,14 @@ def settings(tmp_path: Path) -> Settings:
 
 _WORD = re.compile(r"\S+")
 
+#: Width of the fake embedding space. Chosen empirically, not arbitrarily: the fake hashes
+#: tokens into dimensions, so too few dimensions means collisions dominate and ranking turns
+#: into noise. Measured on the twelve document fixture corpus, 32 dimensions ranked an
+#: unrelated document first for a query whose terms appear verbatim in one document, while 64
+#: and above ranked the right one first. 128 sits well clear of that boundary while staying
+#: small enough to keep the suite fast.
+FAKE_DIMENSION = 128
+
 
 class FakeTokenizer:
     """Whitespace tokenizer that reports real character offsets.
@@ -90,7 +98,7 @@ class FakeEmbedder:
 
     def __init__(
         self,
-        dimension: int = 32,
+        dimension: int = FAKE_DIMENSION,
         name: str = "fake-embedder",
         *,
         normalized: bool = True,

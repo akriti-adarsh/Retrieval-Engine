@@ -7,7 +7,9 @@ is also what lets the failure branches be exercised at all.
 
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from typing import Any
 
 import httpx
@@ -51,7 +53,7 @@ class StubModel:
         self.batches: list[list[str]] = []
         self.kwargs: dict[str, Any] = {}
 
-    def get_sentence_embedding_dimension(self) -> int | None:
+    def get_embedding_dimension(self) -> int | None:
         return self._dimension
 
     def encode(self, sentences: list[str], **kwargs: Any) -> Any:
@@ -211,6 +213,39 @@ async def test_vector_order_matches_input_order() -> None:
 # --- dimension guards -------------------------------------------------------------------
 
 
+async def test_the_pre_rename_dimension_method_still_works() -> None:
+    """sentence-transformers 5.x renamed the accessor, so both spellings are accepted."""
+
+    class OldStyleModel:
+        def __init__(self) -> None:
+            self.tokenizer = StubTokenizer()
+
+        def get_sentence_embedding_dimension(self) -> int | None:
+            return DIMENSION
+
+        def encode(self, sentences: list[str], **kwargs: Any) -> Any:
+            return np.zeros((len(sentences), DIMENSION), dtype=np.float32)
+
+    embedder = LocalEmbedder(_settings(), OldStyleModel)
+
+    vectors = await embedder.embed_documents(["a"])
+
+    assert len(vectors[0]) == DIMENSION
+
+
+async def test_a_model_reporting_no_dimension_trusts_the_config() -> None:
+    class SilentModel:
+        def __init__(self) -> None:
+            self.tokenizer = StubTokenizer()
+
+        def encode(self, sentences: list[str], **kwargs: Any) -> Any:
+            return np.zeros((len(sentences), DIMENSION), dtype=np.float32)
+
+    vectors = await LocalEmbedder(_settings(), SilentModel).embed_documents(["a"])
+
+    assert len(vectors[0]) == DIMENSION
+
+
 async def test_model_dimension_mismatch_is_fatal() -> None:
     """A silent width mismatch corrupts the index invisibly, so it must raise."""
     embedder, _ = _local(model=StubModel(dimension=384), embedding_dimension=DIMENSION)
@@ -283,6 +318,75 @@ def test_tokenizer_falls_back_rather_than_losing_the_document() -> None:
     spans = HFTokenizer(UselessTokenizer()).token_spans("two words")
 
     assert spans == [(0, 3), (4, 9)]
+
+
+def test_count_tokens_includes_tokens_that_consume_no_characters() -> None:
+    """Regression: counting only sliceable spans undercounts and lets oversized chunks
+    through. Markdown rules and table separators tokenize into pieces with zero-width
+    offsets, which is how 733-token chunks reached a model with a 512-token limit and were
+    silently truncated. The budget must use the tokenizer's real count.
+    """
+
+    class RuleTokenizer:
+        def __call__(self, text: str, **kwargs: Any) -> dict[str, Any]:
+            # Four real tokens, three that consume no characters.
+            return {
+                "offset_mapping": [(0, 4), (4, 4), (5, 9), (9, 9), (10, 14), (14, 14), (15, 19)],
+                "input_ids": list(range(7)),
+            }
+
+    tokenizer = HFTokenizer(RuleTokenizer())
+
+    assert len(tokenizer.token_spans("some text here nowx")) == 4
+    assert tokenizer.count_tokens("some text here nowx") == 7
+
+
+async def test_concurrent_encode_and_tokenize_never_overlap() -> None:
+    """Regression: the Rust fast tokenizer raises "Already borrowed" when two threads use
+    it at once. Encoding runs in a worker thread while the chunker tokenizes on the event
+    loop thread, which killed concurrent ingestion outright until both took one lock.
+    """
+
+    class BorrowTracker:
+        def __init__(self) -> None:
+            self.active = 0
+            self.max_active = 0
+
+        def use(self) -> None:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            # Long enough that an unlocked second caller would be seen inside the window.
+            time.sleep(0.005)
+            self.active -= 1
+
+    tracker = BorrowTracker()
+
+    class TrackingTokenizer:
+        def __call__(self, text: str, **kwargs: Any) -> dict[str, Any]:
+            tracker.use()
+            spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+            return {"offset_mapping": spans, "input_ids": list(range(len(spans)))}
+
+    class TrackingModel(StubModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tokenizer = TrackingTokenizer()
+
+        def encode(self, sentences: list[str], **kwargs: Any) -> Any:
+            tracker.use()
+            return super().encode(sentences, **kwargs)
+
+    embedder = LocalEmbedder(_settings(), TrackingModel)
+    tokenizer = embedder.tokenizer
+
+    await asyncio.gather(
+        embedder.embed_documents([f"passage {index}" for index in range(8)]),
+        asyncio.to_thread(tokenizer.count_tokens, "a chunk being measured"),
+        asyncio.to_thread(tokenizer.token_spans, "another chunk being sliced"),
+        embedder.embed_query("a query"),
+    )
+
+    assert tracker.max_active == 1, "tokenizer and encode must never be in use at once"
 
 
 def test_approximate_tokenizer_counts_words_and_punctuation() -> None:

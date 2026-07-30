@@ -58,7 +58,46 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
    transport error, malformed body, wrong vector count, wrong width) be tested with
    `httpx.MockTransport` instead of a patched client.
 
-6. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+6. **`ingest_concurrency` parallelises loading and chunking, but not embedding.**
+   *Spec said:* ingestion uses "concurrency via `asyncio.Semaphore`, default 4" (section 4).
+   *Reality is:* the HuggingFace fast tokenizer is a Rust object that raises
+   `RuntimeError: Already borrowed` when two threads touch it at once. Encoding runs in a
+   worker thread (via `asyncio.to_thread`) while the chunker tokenizes on the event loop
+   thread, so concurrent ingestion crashed outright on the first real run against
+   `bge-small`. The fake embedder could never have caught this.
+   *What was done:* the tokenizer wrapper and the encode path share one `threading.Lock`,
+   so document loading, parsing, and chunk assembly still overlap, while tokenizing and
+   encoding are serialised per embedder. This costs nothing real: a CPU forward pass
+   already saturates the cores, so overlapping two would not have been faster. There is a
+   regression test that reproduces the concurrent borrow and asserts it cannot happen.
+
+7. **`count_tokens` and `token_spans` deliberately disagree.**
+   *Spec said:* chunking is token-based via the embedder's own tokenizer (section 4).
+   *Reality is:* markdown horizontal rules and table separators tokenize into pieces whose
+   character offsets are empty. Counting only the spans that can be sliced undercounted, and
+   on the first real run a 733-token chunk reached a model with a 512-token limit and was
+   silently truncated, losing its tail from the embedding.
+   *What was done:* `count_tokens` reports the tokenizer's true count (used for budgeting,
+   which is the conservative direction) and `token_spans` returns only spans that consume
+   characters (used for slicing). A regression test pins the divergence.
+
+8. **sentence-transformers renamed the dimension accessor.**
+   *Spec said:* nothing; it predates the rename.
+   *Reality is:* sentence-transformers 5.x renamed `get_sentence_embedding_dimension` to
+   `get_embedding_dimension` and emits a `FutureWarning` on the old name.
+   *What was done:* `reported_dimension` prefers the new name, falls back to the old one so
+   an older pin still works, and treats a model reporting neither as "unknown" so the
+   configured dimension stays authoritative. Both paths are tested.
+
+9. **Commit 8 (pgvector) deferred until after commit 9 (ingest pipeline).**
+   *Spec said:* commit 8 is the pgvector backend, commit 9 is the orchestrated pipeline.
+   *Reality is:* the Docker daemon was not running on this machine, so no pgvector claim
+   could be verified, and rule 3 forbids calling unverified work done.
+   *What was done:* the ingest pipeline landed first, fully verified end to end against the
+   real `bge-small` model. pgvector follows once Docker is up. The test suite needs no
+   database by design, so nothing else was blocked.
+
+10. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error
