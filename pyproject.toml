@@ -25,6 +25,10 @@ dependencies = [
     "sentence-transformers>=5.6.1",
     "streamlit>=1.60.0",
     "structlog>=26.1.0",
+    # Declared directly, though sentence-transformers would pull it in anyway, because
+    # [tool.uv.sources] below only applies to direct dependencies and that is what pins the
+    # CPU-only build on Linux.
+    "torch>=2.13.0",
     "tqdm>=4.70.0",
     "uvicorn[standard]>=0.52.0",
 ]
@@ -32,6 +36,19 @@ dependencies = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# CPU-only torch on Linux. The default PyPI torch wheel for Linux bundles the CUDA runtime,
+# which added roughly 9 GB to the container image for a service that never touches a GPU: the
+# embedder and the cross-encoder both run on CPU, and that is the deployment this project
+# targets. Windows and macOS wheels on PyPI are already CPU-only, so the marker keeps their
+# resolution untouched.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/retrieval_engine"]
