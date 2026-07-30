@@ -18,32 +18,27 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: spec commits 1-19, 21, 22 landed (22 commits). Remaining: 20 (golden set data),
-  23 (Streamlit UI), 24 (Dockerfile and full CI), 25 (architecture doc and three ADRs), 26
-  (README numbers). Last completed: "docs: comprehensive README, plus eval Makefile targets"
-- NEXT SESSION, in this order, because each unblocks the next:
-  1. Author `data/golden/golden_set.jsonl`, 60 entries, and get
-     `make golden-validate` to print PASS. Spans MUST be copied verbatim out of
-     `data/corpus/*.md` body text (front matter is stripped by the loader) and stay inside one
-     line, since a span crossing a line break must match the break exactly. Keep them 80 to 250
-     chars. 10 negatives with empty relevant_doc_ids and relevant_chunk_texts.
-  2. `make eval-ablate`. Measured throughput is 2,435 tok/s, so budget about 30 min per
-     chunking index and about 90 min for the seven rows. It rewrites the report after every
-     row, so an interrupted run still leaves real numbers on disk.
-  3. Fill the README's Results section from `eval_results/ablation.md`, and write
-     `docs/evaluation.md`. Delete the "ablation has not been run" note only once the numbers
-     are in a committed artifact.
-  4. Commits 23, 24, 25 (UI, containers, architecture doc and ADRs). The README's Build status
-     table lists each as pending; update it as they land.
-- Blocked, not forgotten: three pgvector claims and the Docker image build need a working Docker
-  daemon (DEVIATIONS 9). Multi-query and HyDE ablation rows need a local Ollama; the harness
-  omits them rather than running expansion silently disabled.
-- Do NOT put a number in the README that is not in a committed artifact. The Results section is
-  deliberately empty rather than estimated, and that is the point of the whole harness.
-- Suite at last commit: 500 passed, 1 deselected in 20.43s · Coverage: 91%
-- Open deviations: 14 · Next up: commits 18-22, the eval harness. That is the part that makes
-  this repo credible, and it is also where the two open blockers bite: the ablation needs the
-  real corpus, which needs the arXiv OAI-PMH rewrite (DEVIATIONS 2).
+- Plan position: all 26 spec commits landed. The golden set, the full ablation, the Streamlit
+  UI, the container stack, the architecture doc with three ADRs, and the README numbers are
+  all done. CI is green on the quality matrix, the eval gate, and the Docker build.
+- The ablation IS RUN. Seven configurations, 303 documents, 60 questions, 2.15 hours of CPU.
+  `eval_results/ablation.json` and `ablation.md` are committed, `docs/evaluation.md` is the
+  analysis, and the README Results table is filled from the artifact.
+- Headline, stated the way the repo states it: reranking is the only large win (recall@5
+  0.577 to 0.703), the full pipeline beats plain BM25 by 2.0 points, semantic chunking is the
+  most expensive strategy and finished last, and the dense-against-lexical gap is written up
+  as unmeasured because the golden questions were authored with their evidence in view.
+- Blocked, not forgotten: multi-query and HyDE ablation rows need a local Ollama, which is not
+  installed on this machine (DEVIATIONS 14). The compose image is pinned by tag, not digest.
+  Human review of the golden set is still pending.
+- Do NOT put a number in the README that is not in a committed artifact. This rule has already
+  caught real defects: a projected index build time, a refusal threshold justified only by a
+  hand-run probe (now recorded per question as `EvalRow.top_score`), and a per-stage latency
+  figure that turned out to be one measurement written into two fields.
+- Two instrumentation bugs found by reading artifacts rather than trusting them, both fixed
+  with regression tests: dense and lexical shared a single timing measurement, and a test
+  wrote a live BM25 index into the repository root through a relative path.
+- Open deviations: 15.
 - Note: the SSE route currently streams a fully-computed answer in pieces, so the client
   contract is identical whether or not the backend streamed. Wiring LLM token-by-token
   streaming through it is a separate change and must keep the refusal and extractive paths
