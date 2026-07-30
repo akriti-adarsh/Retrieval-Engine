@@ -175,7 +175,9 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
-async def _measure(tmp_path: Path, corpus_dir: Path) -> tuple[Any, list[GoldenEntry]]:
+async def _run_harness(
+    tmp_path: Path, corpus_dir: Path
+) -> tuple[Any, list[Any], list[GoldenEntry]]:
     settings = _settings(tmp_path)
     entries = build_fixture_golden_set(corpus_dir)
     harness = EvalHarness(
@@ -184,9 +186,14 @@ async def _measure(tmp_path: Path, corpus_dir: Path) -> tuple[Any, list[GoldenEn
         embedder=FakeEmbedder(dimension=FAKE_DIMENSION),
         reranker=CrossEncoderReranker(settings, StubCrossEncoder),
     )
-    run, _rows = await harness.run(
+    run, rows = await harness.run(
         entries, RetrievalConfig(), label="regression gate", progress=False
     )
+    return run, rows, entries
+
+
+async def _measure(tmp_path: Path, corpus_dir: Path) -> tuple[Any, list[GoldenEntry]]:
+    run, _rows, entries = await _run_harness(tmp_path, corpus_dir)
     return run, entries
 
 
@@ -251,6 +258,27 @@ async def test_the_gate_measures_something_rather_than_nothing(
     assert run.metrics["recall@5"] > 0.0
     assert run.metrics["hit_rate@5"] > 0.0
     assert run.latency["total"].p50_ms > 0.0
+
+
+async def test_every_row_records_the_score_the_threshold_saw(
+    tmp_path: Path, corpus_dir: Path
+) -> None:
+    """The refusal threshold is a published choice, so its evidence has to be an artifact.
+
+    Without ``top_score`` on the row, the score distribution that justifies a threshold lives
+    only in whatever the author happened to observe once, which is a claim rather than a
+    measurement. Refused rows keep their sources, so their scores are recorded too, and that
+    is what makes the refused and answered distributions comparable in the same file.
+    """
+    _run, rows, _entries = await _run_harness(tmp_path, corpus_dir)
+
+    assert all(row.top_score >= 0.0 for row in rows)
+    answered = [row for row in rows if not row.refused and row.retrieved_chunk_ids]
+    refused = [row for row in rows if row.refused]
+    assert answered and refused, "both outcomes must occur or this measures nothing"
+    assert all(row.top_score > 0.0 for row in answered)
+    # The threshold separates the two populations, which is the whole claim being recorded.
+    assert max(row.top_score for row in refused) < min(row.top_score for row in answered)
 
 
 async def test_negative_questions_are_refused(tmp_path: Path, corpus_dir: Path) -> None:

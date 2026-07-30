@@ -250,6 +250,9 @@ class EvalHarness:
             answer_type=response.answer_type,
             refused=refused,
             grounded=response.grounding.grounded,
+            # Refusals keep their sources, so this is populated for them too, which is what
+            # makes the refused and answered score distributions comparable.
+            top_score=chunks[0].score if chunks else 0.0,
             timings=response.timings,
         )
 

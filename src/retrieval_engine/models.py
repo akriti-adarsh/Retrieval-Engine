@@ -624,6 +624,16 @@ class EvalRow(Base):
     answer_type: AnswerType = AnswerType.EXTRACTIVE
     refused: bool = False
     grounded: bool = True
+    top_score: float = Field(
+        default=0.0,
+        description=(
+            "Score of the highest ranked source, which is the exact value the refusal "
+            "threshold is compared against when reranking is on. Recorded per question so "
+            "the score distribution behind a chosen threshold is a committed artifact "
+            "rather than a claim, and so refused rows can be told apart from rows that "
+            "retrieved nothing."
+        ),
+    )
     timings: StageTimings = Field(default_factory=StageTimings)
 
 
