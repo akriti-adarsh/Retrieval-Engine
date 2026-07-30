@@ -67,10 +67,14 @@ class EmbedderKind(StrEnum):
 
 
 class LLMKind(StrEnum):
-    """Which generation backend to use. ``extractive`` needs no model server."""
+    """Which generation backend to use. ``extractive`` needs no model server.
+
+    There is deliberately no remote option here. The optional remote backend in this
+    service is the embedder; generation is local Ollama with an extractive fallback, so
+    every value in this enum has a real implementation behind it.
+    """
 
     OLLAMA = "ollama"
-    OPENAI = "openai"
     EXTRACTIVE = "extractive"
 
 

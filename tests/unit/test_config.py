@@ -80,9 +80,9 @@ def test_openai_embedder_without_key_is_rejected() -> None:
         Settings(_env_file=None, embedder=EmbedderKind.OPENAI)
 
 
-def test_openai_llm_without_key_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="requires RE_OPENAI_API_KEY"):
-        Settings(_env_file=None, llm=LLMKind.OPENAI)
+def test_every_generation_backend_has_an_implementation() -> None:
+    """No enum value may exist without code behind it, so there is no remote LLM option."""
+    assert {kind.value for kind in LLMKind} == {"ollama", "extractive"}
 
 
 def test_openai_embedder_with_key_is_accepted() -> None:

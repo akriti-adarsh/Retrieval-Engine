@@ -107,7 +107,19 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
     ablation row is read as a statement about the real corpus size and not mistaken for a
     broken retriever.
 
-11. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+11. **Removed the remote generation backend I had put in `LLMKind`.**
+    *Spec said:* "OpenAI/Anthropic support exists behind an env flag only" (section 0), and
+    the section 2 tree lists `generate/ollama.py` and `generate/extractive.py` with no
+    remote generation client.
+    *Reality is:* my own `models.py` had shipped an `LLMKind.OPENAI` value earlier in the
+    build with nothing implementing it, which would have meant either a stub or a runtime
+    "not implemented" error, both banned by rule 2.
+    *What was done:* dropped the value, so every member of `LLMKind` has real code behind
+    it, and added a test asserting the enum contains exactly `ollama` and `extractive`. The
+    optional remote backend in this service is the embedder, which is where the spec's env
+    flag actually applies.
+
+12. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error

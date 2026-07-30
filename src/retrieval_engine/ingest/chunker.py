@@ -81,7 +81,19 @@ def _span_at(spans: Sequence[PageSpan], position: int) -> PageSpan | None:
     return None
 
 
-def _sentence_ranges(text: str, offset: int = 0) -> list[tuple[int, int]]:
+def split_sentences(text: str) -> list[str]:
+    """Split ``text`` into sentences.
+
+    Public because three stages need sentence segmentation and they must agree: the
+    semantic chunker cuts on sentence boundaries, the extractive answerer selects whole
+    sentences, and grounding verification scores answers sentence by sentence. Two
+    different segmenters would let a sentence be "grounded" against a span that was never
+    a sentence to the chunker.
+    """
+    return [text[start:end] for start, end in sentence_ranges(text)]
+
+
+def sentence_ranges(text: str, offset: int = 0) -> list[tuple[int, int]]:
     """Absolute character ranges of the sentences in ``text``."""
     ranges: list[tuple[int, int]] = []
     cursor = 0
@@ -273,7 +285,7 @@ class RecursiveStructuralChunker:
 
     def _split_large(self, document: Document, block: _Candidate) -> list[_Candidate]:
         """Break a block that is over target into sentence groups that are not."""
-        sentences = _sentence_ranges(document.text[block.start : block.end], block.start)
+        sentences = sentence_ranges(document.text[block.start : block.end], block.start)
         if len(sentences) <= 1:
             return [block]
         groups: list[_Candidate] = []
@@ -357,7 +369,7 @@ class SemanticChunker:
         return [float(1.0 - value) for value in similarities]
 
     async def chunk(self, document: Document) -> list[Chunk]:
-        sentences = _sentence_ranges(document.text)
+        sentences = sentence_ranges(document.text)
         if not sentences:
             return []
         if len(sentences) == 1:
@@ -419,4 +431,6 @@ __all__ = [
     "RecursiveStructuralChunker",
     "SemanticChunker",
     "build_chunker",
+    "sentence_ranges",
+    "split_sentences",
 ]

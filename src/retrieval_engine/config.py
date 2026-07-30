@@ -127,7 +127,6 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434")
     ollama_model: str = Field(default="llama3.1:8b")
     ollama_timeout_s: float = Field(default=60.0, gt=0.0)
-    openai_chat_model: str = Field(default="gpt-4o-mini")
     generation_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     generation_max_tokens: int = Field(default=512, gt=0)
     extractive_sentences: int = Field(
@@ -170,9 +169,6 @@ class Settings(BaseSettings):
         """Fail fast when a remote backend is selected without a key."""
         if self.embedder is EmbedderKind.OPENAI and self.openai_api_key is None:
             msg = "embedder=openai requires RE_OPENAI_API_KEY"
-            raise ValueError(msg)
-        if self.llm is LLMKind.OPENAI and self.openai_api_key is None:
-            msg = "llm=openai requires RE_OPENAI_API_KEY"
             raise ValueError(msg)
         return self
 
