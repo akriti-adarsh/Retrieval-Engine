@@ -18,10 +18,9 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: 4 of 26. Last completed: "feat(ingest): document loaders"
-- Suite at last commit: 134 passed in 13.43s · Coverage: 94%
-- Open deviations: 4 · Next up: commits 5-9 (embedders, chunker, store impls, pgvector,
-  ingest pipeline)
+- Plan position: 5 of 26. Last completed: "feat(embed): local and optional remote embedders"
+- Suite at last commit: 175 passed in 13.82s · Coverage: 94%
+- Open deviations: 6 · Next up: commits 6-9 (chunker, memory store, pgvector, ingest pipeline)
 - Notes for next session:
   - Do not trust anything in `.drafts/`: read `.drafts/README.md`, then either write real tests
     for a draft and verify it, or delete it and write the module fresh. The two module drafts

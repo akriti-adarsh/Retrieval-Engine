@@ -38,7 +38,27 @@ Every place the build differs from `docs/BUILD_SPEC.md`, one line each:
    stating what each still needs. They are tested and moved back in, or rewritten, before
    commits 6 and 7 can be claimed.
 
-4. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
+4. **Token counts are approximate under the optional remote embedder.**
+   *Spec said:* fixed-token chunking is "token-based via the embedder's own tokenizer, never
+   a naive character split" (section 4).
+   *Reality is:* that holds exactly for the default local embedder, whose HuggingFace fast
+   tokenizer gives real token offsets. The OpenAI embeddings API does not expose its
+   tokenizer, and matching it locally would mean adding `tiktoken` for a non-default,
+   key-requiring code path.
+   *What was done:* `embed/openai.py` ships `ApproximateTokenizer`, a word-and-punctuation
+   tokenizer, and its docstring states plainly that chunk sizes are approximate in that
+   configuration and that the local embedder is the default because its counts are exact.
+   No dependency was added and no approximation is hidden.
+
+5. **The optional OpenAI backend uses httpx directly rather than the openai SDK.**
+   *Spec said:* `embed/openai.py  # optional`, without naming a client library.
+   *Reality is:* the entire surface used is one POST to `/embeddings`.
+   *What was done:* called it with `httpx`, which is already a dependency. This avoids an
+   SDK dependency bought for one request, and it lets every failure branch (non-2xx,
+   transport error, malformed body, wrong vector count, wrong width) be tested with
+   `httpx.MockTransport` instead of a patched client.
+
+6. **Added `src/retrieval_engine/errors.py`, which the section 2 tree does not list.**
    *Spec said:* the file tree in section 2, with `UnsupportedFormatError` raised from
    `ingest/loaders.py` and a typed embedding-space error raised from the store.
    *Reality is:* section 7 requires a single API exception handler producing one error
