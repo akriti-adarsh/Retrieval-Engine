@@ -198,12 +198,19 @@ async def test_live_round_trip() -> None:
         uv run pytest -m docker
     """
     import hashlib
+    import uuid
 
     from retrieval_engine.models import Chunk, Document, EmbeddedChunk, make_chunk_id
     from tests.conftest import FakeEmbedder
 
     embedder = FakeEmbedder(dimension=384)
-    store = PgVectorStore(_settings())
+    # A collection of its own, dropped at the end. This test used to run against the default
+    # collection, and because it registers that collection as belonging to 'fake-embedder' and
+    # only deleted its document, the registration row outlived it. The next real service to
+    # point at the same database refused to start, correctly, with an embedding space mismatch.
+    # A test that leaves a shared database unusable is a broken test, not a working guard.
+    collection = f"pytest-{uuid.uuid4().hex[:12]}"
+    store = PgVectorStore(_settings(collection=collection))
     try:
         info = await store.ensure_collection(embedder.info)
         assert info.dimension == 384
@@ -254,4 +261,15 @@ async def test_live_round_trip() -> None:
         assert await store.health() is True
         assert await store.delete_document("live-test-doc") == 1
     finally:
+        # Drop the registration too, not just the rows, so the database is exactly as the
+        # test found it.
+        pool = await store._get_pool()
+        async with pool.connection() as connection:
+            await connection.execute("DELETE FROM collections WHERE name = %s", (collection,))
         await store.close()
+
+    leftover = PgVectorStore(_settings(collection=collection))
+    try:
+        assert await leftover.collection_info() is None, "the test left a collection behind"
+    finally:
+        await leftover.close()

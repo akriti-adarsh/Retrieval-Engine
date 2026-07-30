@@ -96,7 +96,7 @@ regression floor measured with a deterministic fake embedder, explained in
 | arXiv corpus (303 papers) | Downloaded, manifest committed |
 | Golden set (`data/golden/golden_set.jsonl`) | 60 questions, validator reports 0 failures |
 | pgvector, migrations, live round trip | Verified against a real database |
-| Docker image, compose stack, full CI | Complete |
+| Docker image, compose stack, full CI | Complete. Stack verified running: postgres, api, and streamlit all healthy, ingest and query end to end through the containers |
 | Streamlit UI (`make ui`) | Complete |
 | `docs/architecture.md`, three ADRs | Complete |
 | Ablation results (`eval_results/`) | Complete. Seven configurations, 2.15 hours, artifacts committed |
@@ -236,13 +236,17 @@ make install                                    # uv sync --frozen
 make corpus                                     # fetch 300 arXiv cs.CL papers
 ```
 
-Then start the API. With Docker:
+Then start the API. With Docker, in this order, because the service applies no schema of its
+own and will not start against an empty database:
 
 ```bash
-docker compose up -d              # postgres, api, streamlit (ollama is in the "llm" profile)
-uv run python scripts/migrate.py  # apply the schema
-uv run uvicorn retrieval_engine.api.app:create_app --factory --port 8000
+docker compose up -d postgres                          # database first
+docker compose run --rm api python scripts/migrate.py  # apply the schema, idempotent
+docker compose up -d                                   # api on :8000, streamlit on :8501
 ```
+
+Ollama sits in the `llm` profile and is **not** started by default, so the stack above comes up
+with no model server and answers extractively. Add it with `docker compose --profile llm up -d`.
 
 Without Docker, using the in-memory store:
 
@@ -250,15 +254,16 @@ Without Docker, using the in-memory store:
 RE_STORE=memory uv run uvicorn retrieval_engine.api.app:create_app --factory --port 8000
 ```
 
-Ingest and ask. This is real output from a live run with **Ollama deliberately not running**,
-which is why `answer_type` is `extractive`:
+Ingest and ask. Everything below is **real output from the containerised stack above**, with no
+model server running, which is why `answer_type` is `extractive`. The corpus here is three of
+this repository's own documents, so it takes a second rather than half an hour:
 
 ```bash
 $ curl -s -X POST localhost:8000/v1/ingest \
-    -H 'Content-Type: application/json' -d '{"path": "corpus"}'
-{"docs_seen":4,"docs_changed":4,"docs_unchanged":0,"docs_failed":0,
- "chunks_created":44,"chunks_skipped":0,"tokens_embedded":13578,
- "elapsed_seconds":12.08,"errors":[]}
+    -H 'Content-Type: application/json' -d '{"path": "demo"}'
+{"docs_seen":3,"docs_changed":3,"docs_unchanged":0,"docs_failed":0,
+ "chunks_created":23,"chunks_skipped":0,"tokens_embedded":4870,
+ "elapsed_seconds":1.103,"errors":[]}
 
 $ curl -s localhost:8000/health/ready
 {"ready":true,"store":true,"embedder":true,"generator":false,
@@ -266,25 +271,44 @@ $ curl -s localhost:8000/health/ready
 
 $ curl -s -X POST localhost:8000/v1/query \
     -H 'Content-Type: application/json' \
-    -d '{"query": "how is reciprocal rank fusion scored?", "top_k": 2}'
-{"answer":"... Reciprocal Rank Fusion: score(d) = sum_r 1/(k + rank_r(d)) with k=60
-            configurable. [1] ...",
+    -d '{"query": "how does reciprocal rank fusion combine two ranked lists?", "top_k": 2}'
+{"answer":"## Decision Run both retrievers on every query and fuse their ranked lists with
+            reciprocal rank fusion: score(d) = sum over lists of 1 / (k + rank(d)) with
+            k = 60 ... [1]",
  "answer_type":"extractive",
- "citations":[{"marker":1,"chunk_id":"...","doc_id":"BUILD_SPEC","resolved":true},
-              {"marker":2,"chunk_id":"...","doc_id":"BUILD_SPEC","resolved":true}],
+ "citations":[{"marker":1,"doc_id":"001-hybrid-over-dense-only","resolved":true},
+              {"marker":2,"doc_id":"001-hybrid-over-dense-only","resolved":true}],
  "grounding":{"grounded":true,"flagged_sentences":[],"threshold":0.55},
- "timings":{"dense_ms":37.2,"rerank_ms":0.0,"total_ms":2940.9},
+ "timings":{"expansion_ms":0.0,"dense_ms":78.1,"lexical_ms":62.5,"fusion_ms":0.3,
+            "rerank_ms":5281.1,"retrieval_ms":5359.8,"generation_ms":4210.5,
+            "grounding_ms":190.6,"total_ms":9761.2},
  "prompt_version":"v1","model":"extractive","request_id":"..."}
 ```
 
 Note `generator: false` with `ready: true`. A dead model server is a quality reduction, not an
 outage, so it must not pull the service out of rotation.
 
+Note also that `dense_ms` and `lexical_ms` differ. They run concurrently and each times itself,
+so they overlap and are not meant to sum to `retrieval_ms`. They were identical in earlier
+artifacts, which was a bug, not a coincidence.
+
 Re-run the ingest and nothing is re-embedded:
 
 ```bash
-$ curl -s -X POST localhost:8000/v1/ingest -H 'Content-Type: application/json' -d '{"path": "corpus"}'
-{"docs_changed":0,"docs_unchanged":4,"chunks_created":0,"chunks_skipped":44,"tokens_embedded":0,...}
+$ curl -s -X POST localhost:8000/v1/ingest -H 'Content-Type: application/json' -d '{"path": "demo"}'
+{"docs_seen":3,"docs_changed":0,"docs_unchanged":3,"docs_failed":0,
+ "chunks_created":0,"chunks_skipped":23,"tokens_embedded":0,
+ "elapsed_seconds":0.011,"errors":[]}
+```
+
+A path outside the data directory is refused rather than read, and every failure uses the same
+error envelope:
+
+```bash
+$ curl -s -X POST localhost:8000/v1/ingest -H 'Content-Type: application/json' -d '{"path": "../../etc"}'
+{"error":{"code":"document_load_error",
+          "message":"path '../../etc' is outside the configured data directory",
+          "request_id":"41da823508374e12b0898f103db41b0f"}}
 ```
 
 Change detection compares the document's content hash, not its modification time, because a
@@ -837,7 +861,7 @@ is, what was done.
 | Claim | Status |
 |---|---|
 | pgvector migration applies cleanly | **Verified** against pgvector/pgvector:pg16, and re-running is a no-op |
-| pgvector live round trip | **Verified**, as a `@pytest.mark.docker` test excluded from the default run |
+| pgvector live round trip | **Verified**, as a `@pytest.mark.docker` test excluded from the default run. The test uses its own collection and drops it, then asserts it is gone |
 | `SET LOCAL hnsw.ef_search` reaches the planner | **Verified** |
 | Docker image builds | **Verified** locally, and CI builds it on every push |
 | Compose image pinned by digest | **Not done.** Pinned by tag |
