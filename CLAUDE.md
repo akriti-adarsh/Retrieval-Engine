@@ -18,9 +18,25 @@ The spec is docs/BUILD_SPEC.md. This file is rules and state; the spec defines t
    green commit and update State. Do not start work you cannot finish.
 
 ## State (update at every commit)
-- Plan position: 3 of 26. Last completed: "feat(config): settings and logging"
-- Suite at last commit: 83 passed in 2.78s · Coverage: 99%
-- Open deviations: 2 · Next up: commits 4-9
-- Notes for next session: local dev is Windows; docker daemon was not running at scaffold time, so
-  the pgvector path is validated separately from the default test suite (suite needs no database by
-  design). Local python is 3.11.14 via uv, matching the CI matrix floor.
+- Plan position: 3 of 26 complete, plus one interface-only commit that sits ahead of commits 6
+  and 7. Last completed: "feat(embed,store): embedder and vector store protocols"
+- Suite at last commit: 97 passed in 11.83s · Coverage: 97%
+- Open deviations: 4 · Next up: commits 4-9 (loaders, chunker, embed impls, store impls, pgvector,
+  ingest pipeline)
+- Notes for next session:
+  - A parallel build of loaders, embedders, memory store, and chunker was cut off partway by a
+    session usage limit. Nothing from it was committed. Do not trust anything in `.drafts/`:
+    read `.drafts/README.md`, then either write real tests for a draft and verify it, or delete
+    it and write the module fresh. Two of those drafts have never been imported even once.
+  - Build order matters here: the chunker needs the `Tokenizer` protocol from `embed/base.py`,
+    so embedders come before the chunker regardless of the plan's numbering.
+  - Both models are already in the local HuggingFace cache, so no download is needed:
+    `bge-small-en-v1.5` (384 dim, tokenizer confirmed fast, so `return_offsets_mapping` works and
+    the chunker can slice on exact token offsets) and `bge-reranker-base` (sanity check gave
+    0.9997 for a relevant pair against 0.00004 for an irrelevant one).
+  - arXiv: use OAI-PMH, not the Search API. See DEVIATIONS entry 2.
+  - Docker daemon is not running on this machine, so the pgvector backend and compose stack are
+    still entirely unvalidated. The default suite needs no database by design, so this does not
+    block commits 4 to 7, but it does block commit 8's acceptance.
+  - Local python is 3.11.14 via uv, matching the CI matrix floor. CI is green on all three
+    pushed commits.

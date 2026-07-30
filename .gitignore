@@ -8,6 +8,7 @@ venv/
 # Tooling caches
 .pytest_cache/
 .mypy_cache/
+.mypy_cache_*/
 .ruff_cache/
 .hypothesis/
 .coverage
@@ -23,7 +24,7 @@ htmlcov/
 # redistributed here. The manifest with SHA256s is committed; run the download script.
 data/corpus/*
 !data/corpus/.gitkeep
-data/corpus/manifest.json.tmp
+!data/corpus/manifest.json
 
 # Derived retrieval artifacts
 data/index/
@@ -35,6 +36,10 @@ models/
 
 # Local docker overrides
 docker-compose.override.yml
+
+# Unverified drafts parked out of the package tree. Nothing here is committed until it
+# has tests and the gates pass on it.
+.drafts/
 
 # OS
 Thumbs.db

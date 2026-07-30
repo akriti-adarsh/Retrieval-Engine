@@ -51,6 +51,17 @@ class EmbeddingSpaceMismatchError(RetrievalEngineError):
     http_status = 409
 
 
+class EmbeddingBackendError(RetrievalEngineError):
+    """A remote embedding backend refused or failed a request.
+
+    Distinct from :class:`EmbeddingSpaceMismatchError`: the vectors would have been
+    fine, the service did not produce them.
+    """
+
+    code = "embedding_backend_error"
+    http_status = 502
+
+
 class StoreUnavailableError(RetrievalEngineError):
     """The vector store cannot be reached or has not been migrated."""
 
@@ -101,6 +112,7 @@ __all__ = [
     "ConfigurationError",
     "DocumentLoadError",
     "DocumentNotFoundError",
+    "EmbeddingBackendError",
     "EmbeddingSpaceMismatchError",
     "GoldenSetValidationError",
     "JobNotFoundError",
